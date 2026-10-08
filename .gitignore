@@ -1,0 +1,23 @@
+node_modules/
+.next/
+__pycache__/
+.pytest_cache/
+.venv/
+*.pyc
+*.db
+.env
+.env.local
+coverage/
+data/
+.ruff_cache/
+*.tsbuildinfo
+
+# Local project notes and reference material (not part of the submission)
+README.md
+Assignment Duolingo Clone.docx
+duolingo-clone-plan.md
+duolingo-product-blueprint.md
+learnpageimages/
+.agents/
+.codex/
+.cursor/

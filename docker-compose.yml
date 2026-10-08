@@ -1,0 +1,38 @@
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: sqlite:////data/duolingo.db
+      CORS_ORIGINS: ${PUBLIC_ORIGIN:-http://localhost}
+    volumes:
+      - ${DATA_DIR:-./data}:/data
+    networks: [app]
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on: [backend]
+    networks: [app]
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on: [frontend, backend]
+    environment:
+      APP_ADDRESS: ${APP_ADDRESS:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [app]
+
+networks:
+  app:
+
+volumes:
+  caddy_data:
+  caddy_config:
