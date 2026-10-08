@@ -1,6 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { Exercise, LessonAttempt } from "@/lib/types";
@@ -11,7 +13,7 @@ type Feedback = { correct: boolean; explanation: string; correct_answer: unknown
 
 function MultipleChoice({ exercise, answer, setAnswer, disabled }: ExerciseProps) {
   const options = exercise.payload.options as string[];
-  return <div className="choice-grid">{options.map((option, index) => <button key={option} disabled={disabled} className={`answer-card ${answer === option ? "selected" : ""}`} onClick={() => setAnswer(option)}><kbd>{index + 1}</kbd><span>{option}</span></button>)}</div>;
+  return <div className="choice-grid">{options.map((option, index) => <button key={option} disabled={disabled} className={`answer-card ${answer === option ? "selected" : ""}`} onClick={() => setAnswer(option)}><span>{option}</span><kbd>{index + 1}</kbd></button>)}</div>;
 }
 
 function WordBank({ exercise, answer, setAnswer, disabled }: ExerciseProps) {
@@ -64,6 +66,7 @@ function canSubmit(answer: Answer, type: Exercise["type"]) {
 }
 
 export function LessonPlayer({ lessonId, mode = "lesson" }: { lessonId: number; mode?: "lesson" | "practice" | "legendary" }) {
+  const router = useRouter();
   const [attempt, setAttempt] = useState<LessonAttempt | null>(null);
   const [answer, setAnswer] = useState<Answer>("");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
@@ -72,6 +75,7 @@ export function LessonPlayer({ lessonId, mode = "lesson" }: { lessonId: number; 
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(mode === "legendary" ? 75 : null);
+  const [exitOpen, setExitOpen] = useState(false);
 
   useEffect(() => { api.startAttempt(lessonId, mode).then((value) => { setAttempt(value); setHearts(value.hearts); }).catch((reason: Error) => setError(reason.message)); }, [lessonId, mode]);
   useEffect(() => {
@@ -95,16 +99,30 @@ export function LessonPlayer({ lessonId, mode = "lesson" }: { lessonId: number; 
     window.speechSynthesis.speak(utterance);
   };
 
-  const check = async () => {
-    if (!attempt || !exercise || !canSubmit(answer, exercise.type)) return;
+  const check = async (skip = false) => {
+    if (!attempt || !exercise || (!skip && !canSubmit(answer, exercise.type))) return;
     setBusy(true);
     try {
-      const response = await api.answer(attempt.attempt_id, exercise.id, answer);
+      const response = await api.answer(attempt.attempt_id, exercise.id, skip ? "" : answer);
       setFeedback(response);
       setHearts(response.hearts);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not check the answer"); }
     finally { setBusy(false); }
   };
+
+  const leaveLesson = async () => {
+    if (attempt) await api.abandon(attempt.attempt_id).catch(() => undefined);
+    router.push("/learn");
+  };
+
+  const questionTitle = exercise?.type === "multiple_choice" && exercise.payload.phrase
+    ? `What does “${exercise.payload.phrase}” mean?`
+    : exercise?.type === "word_bank"
+      ? "Translate this sentence"
+      : exercise?.type === "match_pairs"
+        ? "Tap the matching pairs"
+        : exercise?.prompt;
+  const questionLabel = exercise?.type === "multiple_choice" ? "NEW WORD" : exercise?.type === "match_pairs" ? "MATCH THE PAIRS" : "TRANSLATE";
 
   const next = async () => {
     if (!attempt || !feedback) return;
@@ -127,16 +145,18 @@ export function LessonPlayer({ lessonId, mode = "lesson" }: { lessonId: number; 
   if (result) return <div className="completion-screen"><div className="confetti" aria-hidden>{Array.from({ length: 22 }, (_, index) => <i key={index} style={{ "--i": index } as React.CSSProperties}/>)}</div><Mascot mood="celebrate" size={150}/><span className="eyebrow">LESSON COMPLETE!</span><h1>Outstanding!</h1><div className="completion-stats"><div><GameIcon name="bolt" size={40}/><strong>{result.xp_awarded}</strong><span>XP EARNED</span></div><div><GameIcon name="trophy" size={40}/><strong>{result.accuracy}%</strong><span>ACCURACY</span></div><div><GameIcon name="flame" size={40}/><strong>{result.streak}</strong><span>DAY STREAK</span></div></div>{result.new_achievements.length > 0 && <div className="achievement-toast">🏅 Achievement unlocked: {result.new_achievements[0].title}</div>}<Link href="/learn" className="game-button wide">CONTINUE</Link></div>;
   if (feedback?.failed) return <div className="completion-screen"><Mascot mood="sad" size={150}/><span className="eyebrow red">OUT OF HEARTS</span><h1>Don’t give up!</h1><p>Practice to refill your hearts and come back stronger.</p><button className="game-button wide" onClick={async () => { await api.refill(); location.reload(); }}>PRACTICE + REFILL</button><Link href="/learn" className="text-button">RETURN TO PATH</Link></div>;
   return (
-    <div className="lesson-page">
-      <header className="lesson-header"><Link href="/learn" aria-label="Exit lesson" className="close-button">×</Link><div className="lesson-progress"><span style={{ width: `${progress}%` }}/></div><div className="lesson-hearts">{secondsLeft === null ? <><GameIcon name="heart" size={28}/><strong>{hearts}</strong></> : <><GameIcon name="clock" size={28}/><strong>{secondsLeft}s</strong></>}</div></header>
+    <div className="lesson-page reference-lesson-page">
+      <header className="lesson-header"><button type="button" onClick={() => setExitOpen(true)} aria-label="Exit lesson" className="close-button">×</button><div className="lesson-progress" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${progress}%` }}/></div><div className="lesson-hearts">{secondsLeft === null ? <><Image src="/learn-assets/heart.svg" width={30} height={30} alt=""/><strong>{hearts}</strong></> : <><GameIcon name="clock" size={28}/><strong>{secondsLeft}s</strong></>}</div></header>
       <main className="exercise-area">
-        <div className="exercise-heading"><button className="sound-button" onClick={speak} aria-label="Read prompt aloud">🔊</button><div><span className="exercise-counter">QUESTION {attempt.current_index + 1} OF {attempt.exercises.length}</span><h1>{exercise.prompt}</h1>{exercise.hint && <p>{exercise.hint}</p>}</div></div>
+        <div className="exercise-heading"><div><span className="exercise-counter"><span className="lesson-new-icon" aria-hidden>✦</span>{questionLabel}</span><h1>{questionTitle}</h1>{exercise.hint && <p>{exercise.hint}</p>}</div></div>
+        {exercise.type === "multiple_choice" && exercise.payload.phrase ? <button type="button" className="lesson-phrase" onClick={speak} aria-label={`Read ${exercise.payload.phrase} aloud`}><span className="lesson-sound-icon" aria-hidden>◖))</span><strong>{String(exercise.payload.phrase)}</strong></button> : null}
         <ExerciseRenderer exercise={exercise} answer={answer} setAnswer={setAnswer} disabled={Boolean(feedback)}/>
       </main>
       <footer className={`lesson-footer ${feedback ? feedback.correct ? "correct" : "incorrect" : ""}`}>
-        {feedback ? <div className="feedback-copy"><span className="feedback-icon">{feedback.correct ? "✓" : "×"}</span><div><h2>{feedback.correct ? "Excellent!" : "Correct answer:"}</h2><p>{feedback.correct ? feedback.explanation : String(feedback.correct_answer)}</p></div></div> : <button className="text-button" onClick={() => setAnswer("")}>SKIP</button>}
-        <button className={`game-button ${feedback?.correct ? "green" : feedback ? "red-button" : ""}`} disabled={busy || (!feedback && !canSubmit(answer, exercise.type))} onClick={feedback ? next : check}>{busy ? "CHECKING…" : feedback ? "CONTINUE" : "CHECK"}</button>
+        {feedback ? <div className="feedback-copy" aria-live="polite"><span className="feedback-icon">{feedback.correct ? "✓" : "×"}</span><div><h2>{feedback.correct ? "Great job!" : "Correct solution:"}</h2>{!feedback.correct && <p>{Array.isArray(feedback.correct_answer) ? feedback.correct_answer.join(" ") : String(feedback.correct_answer)}</p>}<div className="lesson-feedback-actions"><button type="button">ᶻz TOO EASY</button><button type="button">△ TOO DIFFICULT</button><button type="button">⚑ REPORT</button></div></div></div> : <button className="text-button" disabled={busy} onClick={() => check(true)}>SKIP</button>}
+        <button className={`game-button ${feedback ? feedback.correct ? "green" : "red-button" : ""}`} disabled={busy || (!feedback && !canSubmit(answer, exercise.type))} onClick={feedback ? next : () => check()}>{busy ? "CHECKING…" : feedback ? "CONTINUE" : "CHECK"}</button>
       </footer>
+      {exitOpen && <div className="lesson-exit-overlay" role="presentation"><div className="lesson-exit-dialog" role="dialog" aria-modal="true" aria-label="Exit lesson"><h2>Are you sure you want to quit?</h2><p>Your progress in this lesson won&apos;t be saved.</p><button type="button" className="game-button" onClick={() => setExitOpen(false)}>KEEP LEARNING</button><button type="button" className="text-button" onClick={leaveLesson}>QUIT</button></div></div>}
       {error && <div className="error-toast">{error}</div>}
     </div>
   );

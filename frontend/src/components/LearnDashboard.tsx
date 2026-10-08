@@ -16,10 +16,13 @@ const pathPositions = [
   { left: "49%", top: "654px" },
 ] as const;
 
-function LessonGlyph({ skill }: { skill: PathSkill }) {
-  if (skill.status === "locked") return <span className="reference-lock" aria-hidden />;
-  if (skill.status === "completed") return <span className="reference-check" aria-hidden />;
-  return <span className="reference-book" aria-hidden><i /><i /></span>;
+function LessonGlyph({ skill, index }: { skill: PathSkill; index: number }) {
+  const asset = skill.status === "locked"
+    ? ["grayheadphones.svg", "dumbleicon.svg", "trophy_white.svg"][Math.max(0, index - 3) % 3]
+    : index === 1 || skill.status === "available"
+      ? "openbook_white.svg"
+      : "tick_white.svg";
+  return <Image src={`/learn-assets/${asset}`} width={42} height={35} alt="" aria-hidden />;
 }
 
 function SkillNode({ skill, index }: { skill: PathSkill; index: number }) {
@@ -44,32 +47,17 @@ function SkillNode({ skill, index }: { skill: PathSkill; index: number }) {
         aria-label={`${skill.title}, ${skill.status}`}
         aria-expanded={locked ? undefined : open}
       >
-        <LessonGlyph skill={skill} />
+        <LessonGlyph skill={skill} index={index} />
       </button>
     </div>
   );
 }
 
 function PathGuide() {
-  return (
-    <svg className="reference-path-guide" viewBox="0 0 180 225" role="img" aria-label="A sleepy bear holding a glowing orb">
-      <ellipse cx="96" cy="209" rx="53" ry="10" fill="#26383f" />
-      <circle cx="58" cy="40" r="11" fill="#a96746" />
-      <circle cx="135" cy="40" r="11" fill="#a96746" />
-      <path d="M50 79c0-35 17-55 47-55s48 20 48 55v49c0 16-7 28-14 37 11 8 17 21 17 34 0 14-10 22-24 22-9 0-17-3-27-10-9 7-18 10-27 10-14 0-25-8-25-22 0-14 6-26 18-34-8-9-13-21-13-37Z" fill="#aa6b49" />
-      <path d="M76 86c7 4 14 4 21 0m8 0c7 4 14 4 20 0" stroke="#e8e4df" strokeWidth="6" strokeLinecap="round" />
-      <circle cx="89" cy="92" r="3.5" fill="#252f33" /><circle cx="113" cy="92" r="3.5" fill="#252f33" />
-      <ellipse cx="101" cy="116" rx="15" ry="13" fill="#8560c8" />
-      <path d="M94 116c5-2 10-2 15 0" stroke="#5d4590" strokeWidth="3" strokeLinecap="round" />
-      <path d="M53 156c10-8 22-4 28 4l18 25c6 9-4 22-14 16l-26-17c-13-8-17-19-6-28Zm93 0c-10-8-22-4-28 4l-18 25c-6 9 4 22 14 16l26-17c13-8 17-19 6-28Z" fill="#c473e5" />
-      <circle cx="99" cy="176" r="32" fill="#58d7ea" opacity=".35" />
-      <circle cx="99" cy="176" r="23" fill="#75e2f0" />
-      <path d="M82 172c10-7 22-7 34 0M87 184c8-5 16-5 24 0" fill="none" stroke="#c9f7ff" strokeWidth="4" strokeLinecap="round" opacity=".8" />
-    </svg>
-  );
+  return <Image className="reference-path-guide" src="/learn-assets/path-guide.svg" width={300} height={300} alt="A sleepy bear holding an orb" />;
 }
 
-function StatsRow({ data }: { data: Bootstrap }) {
+export function ReferenceStatsRow({ data }: { data: Bootstrap }) {
   const stats = data.user;
   const items = [
     { asset: "0day_streak.svg", value: stats.current_streak, label: `${stats.current_streak} day streak` },
@@ -91,42 +79,36 @@ function StatsRow({ data }: { data: Bootstrap }) {
 
 function SuperIllustration() {
   return (
-    <svg className="super-illustration" viewBox="0 0 116 88" aria-hidden>
-      <defs><linearGradient id="superGradient" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#36e2bd" /><stop offset=".5" stopColor="#3a88ff" /><stop offset="1" stopColor="#a343f5" /></linearGradient></defs>
-      <path d="M18 41c0-21 18-34 39-30 11 2 16 10 19 18 11-5 26 0 29 12 5 19-13 39-38 42-27 3-49-16-49-42Z" fill="url(#superGradient)" />
-      <path d="M39 28v23m35-23v23M43 59c9 8 18 8 28 0" fill="none" stroke="#1159d8" strokeWidth="5" strokeLinecap="round" />
-      <circle cx="39" cy="41" r="4" fill="#101b9c" /><circle cx="74" cy="41" r="4" fill="#101b9c" />
-      <path d="M100 72c8 5 12 10 12 15-8 0-14-4-17-11Z" fill="#e92fd8" />
-    </svg>
+    <Image className="super-illustration" src="/learn-assets/super_bird.svg" width={121} height={116} alt="" aria-hidden />
   );
 }
 
-function RightRail({ data }: { data: Bootstrap }) {
+export function ReferenceRightRail({ data, showSuper = true }: { data: Bootstrap; showSuper?: boolean }) {
   const goal = Math.min(100, Math.round((data.user.today_xp / Math.max(1, data.user.daily_goal)) * 100));
   return (
     <aside className="reference-right-rail">
-      <StatsRow data={data} />
-      <section className="reference-card super-card">
-        <div className="super-badge">SUPER</div>
+      <ReferenceStatsRow data={data} />
+      {showSuper && <section className="reference-card super-card">
+        <Image className="super-badge-image" src="/learn-assets/super.svg" width={87} height={23} alt="Super" />
         <h3>Try Super for free</h3>
         <p>No ads, personalized practice, and unlimited Legendary!</p>
         <SuperIllustration />
         <button type="button">START MY FREE MONTH</button>
-      </section>
+      </section>}
       <section className="reference-card bronze-card">
         <header><h3>Bronze League</h3><Link href="/leaderboards">VIEW LEAGUE</Link></header>
-        <div className="bronze-message"><span className="sleeping-podium" aria-hidden><i>Z</i><i>Z</i><b /></span><p>Complete a lesson to join this week&apos;s leaderboard and compete against other learners</p></div>
+        <div className="bronze-message"><Image src="/learn-assets/bronze_league.svg" width={72} height={55} alt="" aria-hidden /><p>Complete a lesson to join this week&apos;s leaderboard and compete against other learners</p></div>
       </section>
       <section className="reference-card quests-card">
         <header><h3>Daily Quests</h3><Link href="/quests">VIEW ALL</Link></header>
         <div className="reference-quest">
-          <span className="quest-bolt" aria-hidden>ϟ</span>
+          <Image src="/learn-assets/Daily_quest.svg" width={48} height={48} alt="" aria-hidden />
           <div><strong>Earn {data.user.daily_goal} XP</strong><div className="reference-progress"><span style={{ width: `${goal}%` }} /><small>{data.user.today_xp} / {data.user.daily_goal}</small></div></div>
-          <Image src="/learn-assets/chest.svg" width={39} height={39} alt="Quest chest" />
+          <Image src="/learn-assets/daily_quest_chest.svg" width={39} height={39} alt="Quest chest" />
         </div>
       </section>
       <section className="ad-block-card">
-        <div className="ad-owl" aria-hidden><span>●</span><span>●</span></div>
+        <div className="ad-owl" aria-hidden />
         <h3>Using an ad blocker?</h3>
         <p>Support education with Super Duolingo and we&apos;ll remove ads for you</p>
         <button type="button">TRY SUPER FOR FREE</button>
@@ -156,14 +138,14 @@ export function LearnDashboard() {
       <section className="reference-path-column">
         <header className="reference-unit-banner">
           <div><span>←&nbsp;&nbsp; SECTION 1, UNIT {activeUnit?.position ?? 1}</span><h1>{activeUnit?.objective ?? "Start your learning journey"}</h1></div>
-          <button type="button" aria-label="Open guidebook"><span className="guide-list" aria-hidden>☷</span> GUIDEBOOK</button>
+          <button type="button" aria-label="Open guidebook"><Image src="/learn-assets/notest_section.svg" width={25} height={25} alt="" aria-hidden /><span className="guidebook-label">GUIDEBOOK</span></button>
         </header>
         <div className="reference-unit-divider"><i /><strong>{activeUnit?.objective ?? "Learning path"}</strong><i /></div>
         <div className="reference-path-stage">
           {visibleSkills.map((skill, index) => <SkillNode key={skill.id} skill={skill} index={index} />)}
           <div className="reference-chest-node">
             <span className="open-label">OPEN</span>
-            <Image src="/learn-assets/chest.svg" width={84} height={84} alt="Open reward chest" />
+            <Image src="/learn-assets/Chest_open.svg" width={84} height={90} alt="Open reward chest" />
           </div>
           <PathGuide />
         </div>
@@ -172,7 +154,7 @@ export function LearnDashboard() {
           <h2><span className="tiny-lock" aria-hidden /> Section 2</h2>
         </section>
       </section>
-      <RightRail data={data} />
+      <ReferenceRightRail data={data} />
     </div>
   );
 }
