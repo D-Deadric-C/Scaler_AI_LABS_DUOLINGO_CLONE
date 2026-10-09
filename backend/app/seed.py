@@ -111,10 +111,10 @@ def seed_sample_completion(db: Session, user: User, lesson: Lesson) -> None:
     )
     db.add(attempt)
     db.flush()
-    for exercise in exercises:
+    for turn, exercise in enumerate(exercises, start=1):
         answer = exercise.answer
         submitted = answer.get("value") or answer.get("tokens") or answer.get("pairs") or answer["accepted"][0]
-        db.add(ExerciseAttempt(attempt_id=attempt.id, exercise_id=exercise.id, submitted_answer={"value": submitted}, correct=True))
+        db.add(ExerciseAttempt(attempt_id=attempt.id, exercise_id=exercise.id, turn=turn, submitted_answer={"value": submitted}, correct=True))
 
 
 def seed_database(db: Session) -> None:

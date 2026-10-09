@@ -72,13 +72,16 @@ def test_lesson_rewards_update_profile_quest_leaderboard_and_path(client: APICli
     for exercise, answer in zip(attempt["exercises"], answers, strict=True):
         response = client.post(f"/api/v1/attempts/{attempt['attempt_id']}/answers", json={"exercise_id": exercise["id"], "answer": answer})
         assert response.status_code == 200
+    assert client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete").status_code == 409  # the wrong answer is still queued
+    retry = submit_answer(client, attempt, 0, "My name is Ana")
+    assert retry.json()["correct"] is True and retry.json()["ready_to_complete"] is True
 
     completion = client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete").json()
     after = client.get("/api/v1/courses/1/path").json()
     profile = client.get("/api/v1/me/profile").json()
     weekly_after = next(entry["xp"] for entry in client.get("/api/v1/leaderboards/weekly").json()["entries"] if entry["is_current"])
     assert completion["xp_awarded"] == 18
-    assert completion["accuracy"] == 80
+    assert completion["accuracy"] == 83  # 5 correct out of 6 submitted answers
     assert after["user"]["total_xp"] == before["user"]["total_xp"] + 18
     assert after["user"]["today_xp"] == before["user"]["today_xp"] + 18
     assert after["user"]["current_streak"] == before["user"]["current_streak"] + 1
@@ -101,7 +104,7 @@ def test_fully_answered_attempt_can_resume_and_complete_once(client: APIClient) 
     resumed = client.post(f"/api/v1/lessons/{lesson_id}/attempts", json={"mode": "lesson"}).json()
     assert resumed["attempt_id"] == attempt["attempt_id"]
     assert resumed["status"] == "active"
-    assert resumed["current_index"] == len(resumed["exercises"])
+    assert resumed["queue"] == []
     first = client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete").json()
     second = client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete").json()
     assert first["total_xp"] == second["total_xp"] == initial_xp + first["xp_awarded"]
@@ -278,6 +281,7 @@ def test_practice_never_costs_hearts_and_rewards_one(client: APIClient) -> None:
     assert submit_answer(client, attempt, 0, "wrong").json()["hearts"] == 4
     for index, value in list(enumerate(FIRST_LESSON_ANSWERS))[1:]:
         submit_answer(client, attempt, index, value)
+    submit_answer(client, attempt, 0, FIRST_LESSON_ANSWERS[0])  # the missed exercise comes back
     result = client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete").json()
     assert result["hearts"] == 5
     path = client.get("/api/v1/courses/1/path").json()

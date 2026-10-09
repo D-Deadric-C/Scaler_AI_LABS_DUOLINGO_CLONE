@@ -208,12 +208,15 @@ class LessonAttempt(Base):
 
 
 class ExerciseAttempt(Base):
+    """One submitted answer ("turn"). A wrong answer re-queues its exercise, so an exercise can have several turns."""
+
     __tablename__ = "exercise_attempts"
-    __table_args__ = (UniqueConstraint("attempt_id", "exercise_id"),)
+    __table_args__ = (UniqueConstraint("attempt_id", "turn"), CheckConstraint("turn >= 1", name="ck_exercise_attempts_turn"))
 
     id: Mapped[int] = mapped_column(primary_key=True)
     attempt_id: Mapped[int] = mapped_column(ForeignKey("lesson_attempts.id", ondelete="CASCADE"), index=True)
     exercise_id: Mapped[int] = mapped_column(ForeignKey("exercises.id", ondelete="CASCADE"), index=True)
+    turn: Mapped[int] = mapped_column(Integer)
     submitted_answer: Mapped[dict] = mapped_column(JSON)
     correct: Mapped[bool] = mapped_column(Boolean)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)

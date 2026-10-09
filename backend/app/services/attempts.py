@@ -44,6 +44,32 @@ def seconds_left(attempt: LessonAttempt, now: datetime) -> int | None:
     return max(0, int((attempt.expires_at - now).total_seconds()))
 
 
+def load_turns(db: Session, attempt_id: int) -> list[ExerciseAttempt]:
+    return list(db.scalars(select(ExerciseAttempt).where(ExerciseAttempt.attempt_id == attempt_id).order_by(ExerciseAttempt.turn)).all())
+
+
+def build_queue(exercise_ids: list[int], turns: list[ExerciseAttempt]) -> list[int]:
+    """Exercises still to answer: the lesson order, with every wrong answer re-queued at the end."""
+    queue = list(exercise_ids)
+    for turn in turns:
+        if not queue or queue[0] != turn.exercise_id:
+            break  # defensive: history that does not follow the queue is ignored
+        head = queue.pop(0)
+        if not turn.correct:
+            queue.append(head)
+    return queue
+
+
+def first_try_correct(turns: list[ExerciseAttempt]) -> int:
+    seen: set[int] = set()
+    count = 0
+    for turn in turns:
+        if turn.exercise_id not in seen:
+            seen.add(turn.exercise_id)
+            count += int(turn.correct)
+    return count
+
+
 def get_attempt(db: Session, attempt_id: int, user_id: int) -> LessonAttempt:
     attempt = db.get(LessonAttempt, attempt_id)
     if not attempt or attempt.user_id != user_id:
@@ -97,15 +123,18 @@ def attempt_payload(db: Session, attempt: LessonAttempt, now: datetime | None = 
     now = now or clock.current_time()
     lesson = db.get(Lesson, attempt.lesson_id)
     user = get_user(db, attempt.user_id, now)
+    exercises = lesson_exercises(db, attempt.lesson_id)
     return {
         "attempt_id": attempt.id,
         "mode": attempt.mode,
         "lesson": {"id": lesson.id, "title": lesson.title, "xp_reward": lesson.xp_reward},
         "status": attempt.status,
-        "current_index": attempt.current_index,
+        "queue": build_queue([exercise.id for exercise in exercises], load_turns(db, attempt.id)),
+        "total_exercises": len(exercises),
+        "correct_count": attempt.correct_count,
         "hearts": user.hearts,
         "seconds_left": seconds_left(attempt, now),
-        "exercises": [public_exercise(exercise, attempt.id) for exercise in lesson_exercises(db, attempt.lesson_id)],
+        "exercises": [public_exercise(exercise, attempt.id) for exercise in exercises],
     }
 
 
@@ -133,27 +162,30 @@ def answer_attempt(db: Session, user_id: int, attempt_id: int, exercise_id: int,
         db.commit()
         raise HTTPException(409, "Time is up")
     exercises = lesson_exercises(db, attempt.lesson_id)
-    if attempt.current_index >= len(exercises):
+    turns = load_turns(db, attempt.id)
+    queue = build_queue([exercise.id for exercise in exercises], turns)
+    if not queue:
         raise HTTPException(409, "All exercises are already answered")
-    exercise = exercises[attempt.current_index]
-    if exercise.id != exercise_id:
+    if queue[0] != exercise_id:
         raise HTTPException(409, "Exercises must be answered in order")
+    exercise = next(item for item in exercises if item.id == exercise_id)
     user = get_user(db, attempt.user_id, now)
     correct = check_answer(exercise, submitted)
-    db.add(ExerciseAttempt(attempt_id=attempt.id, exercise_id=exercise.id, submitted_answer={"value": submitted}, correct=correct, created_at=now))
+    db.add(ExerciseAttempt(attempt_id=attempt.id, exercise_id=exercise.id, turn=len(turns) + 1, submitted_answer={"value": submitted}, correct=correct, created_at=now))
     if correct:
         attempt.correct_count += 1
     elif attempt.mode == AttemptMode.LESSON and lose_heart(user, now):
         attempt.hearts_lost += 1
         log_heart_event(db, user, HeartEventKind.MISTAKE, -1, attempt.id)
     attempt.current_index += 1
+    queue_after = queue[1:] + ([] if correct else [exercise.id])  # a wrong answer comes back at the end
     failed = attempt.mode == AttemptMode.LESSON and user.hearts == 0 and not correct
     if failed:
         attempt.status = AttemptStatus.FAILED
         attempt.completed_at = now
     try:
         db.commit()
-    except IntegrityError:  # the same exercise was submitted twice concurrently
+    except IntegrityError:  # the same turn was submitted twice concurrently
         db.rollback()
         raise HTTPException(409, "Exercise already answered") from None
     return {
@@ -161,8 +193,10 @@ def answer_attempt(db: Session, user_id: int, attempt_id: int, exercise_id: int,
         "explanation": exercise.explanation,
         "correct_answer": display_answer(exercise),
         "hearts": user.hearts,
-        "next_index": attempt.current_index,
-        "ready_to_complete": attempt.current_index == len(exercises) and not failed,
+        "queue": queue_after,
+        "remaining": len(queue_after),
+        "correct_count": attempt.correct_count,
+        "ready_to_complete": not queue_after and not failed,
         "failed": failed,
     }
 
@@ -175,9 +209,9 @@ def complete_attempt(db: Session, user_id: int, attempt_id: int) -> dict[str, An
         return completion_payload(db, attempt, user, [])
     lesson = db.get(Lesson, attempt.lesson_id)
     exercise_count = db.scalar(select(func.count()).select_from(Exercise).where(Exercise.lesson_id == lesson.id)) or 0
-    if attempt.status != AttemptStatus.ACTIVE or attempt.current_index < exercise_count:
+    if attempt.status != AttemptStatus.ACTIVE or attempt.correct_count < exercise_count:
         raise HTTPException(409, "Attempt is not ready to complete")
-    earned = lesson.xp_reward + attempt.correct_count * XP_PER_CORRECT_ANSWER
+    earned = lesson.xp_reward + first_try_correct(load_turns(db, attempt.id)) * XP_PER_CORRECT_ANSWER
     if attempt.mode == AttemptMode.LEGENDARY:
         earned *= 2
     # Atomically claim the completion: exactly one concurrent request wins and applies the rewards.
@@ -238,7 +272,7 @@ def apply_skill_progress(db: Session, user: User, lesson: Lesson, attempt: Lesso
 
 
 def completion_payload(db: Session, attempt: LessonAttempt, user: User, achievements: list[dict[str, Any]]) -> dict[str, Any]:
-    answered = db.scalar(select(func.count()).select_from(ExerciseAttempt).where(ExerciseAttempt.attempt_id == attempt.id)) or attempt.current_index
+    answered = attempt.current_index  # every submitted answer, including retries of wrong ones
     accuracy = attempt.correct_count / max(answered, 1)
     today = clock.today_utc()
     today_xp = today_xp_for(db, user.id, today)

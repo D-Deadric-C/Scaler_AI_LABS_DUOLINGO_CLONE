@@ -37,6 +37,28 @@ def get_db() -> Iterator[Session]:
         db.close()
 
 
+def _rebuild_legacy_exercise_attempts(connection) -> None:
+    """Databases from before wrong answers were retried allowed one answer per exercise; rebuild that table."""
+    inspector = inspect(connection)
+    if "exercise_attempts" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("exercise_attempts")}
+    legacy_unique = any(set(constraint["column_names"]) == {"attempt_id", "exercise_id"} for constraint in inspector.get_unique_constraints("exercise_attempts"))
+    if "turn" in columns and not legacy_unique:
+        return
+    connection.exec_driver_sql(
+        "CREATE TABLE exercise_attempts_old AS SELECT id, attempt_id, exercise_id, submitted_answer, correct, COALESCE(created_at, CURRENT_TIMESTAMP) AS created_at, "
+        "ROW_NUMBER() OVER (PARTITION BY attempt_id ORDER BY id) AS turn FROM exercise_attempts"
+    )
+    connection.exec_driver_sql("DROP TABLE exercise_attempts")
+    Base.metadata.tables["exercise_attempts"].create(connection)
+    connection.exec_driver_sql(
+        "INSERT INTO exercise_attempts (id, attempt_id, exercise_id, submitted_answer, correct, created_at, turn) "
+        "SELECT id, attempt_id, exercise_id, submitted_answer, correct, created_at, turn FROM exercise_attempts_old"
+    )
+    connection.exec_driver_sql("DROP TABLE exercise_attempts_old")
+
+
 def ensure_schema(bind=None) -> None:
     """Create missing tables, columns and indexes (lightweight stand-in for migrations).
 
@@ -44,6 +66,8 @@ def ensure_schema(bind=None) -> None:
     """
     target = bind or engine
     Base.metadata.create_all(bind=target)
+    with target.begin() as connection:
+        _rebuild_legacy_exercise_attempts(connection)
     inspector = inspect(target)
     with target.begin() as connection:
         for table in Base.metadata.sorted_tables:

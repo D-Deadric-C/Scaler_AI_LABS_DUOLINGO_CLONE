@@ -110,8 +110,8 @@ def test_resuming_mid_lesson_returns_the_same_attempt_and_position(client: APICl
     submit_answer(client, attempt, 0, SET_B[0])
     submit_answer(client, attempt, 1, SET_B[1])
     resumed = start(client)
-    assert resumed["attempt_id"] == attempt["attempt_id"] and resumed["current_index"] == 2
-    assert client.get(f"/api/v1/attempts/{attempt['attempt_id']}").json()["current_index"] == 2
+    assert resumed["attempt_id"] == attempt["attempt_id"] and len(resumed["queue"]) == 3 and resumed["correct_count"] == 2
+    assert client.get(f"/api/v1/attempts/{attempt['attempt_id']}").json()["queue"] == resumed["queue"]
 
 
 def test_modes_are_independent_and_abandoned_attempts_restart(client: APIClient) -> None:
@@ -119,7 +119,7 @@ def test_modes_are_independent_and_abandoned_attempts_restart(client: APIClient)
     assert lesson["attempt_id"] != practice["attempt_id"]
     client.post(f"/api/v1/attempts/{lesson['attempt_id']}/abandon")
     fresh = start(client)
-    assert fresh["attempt_id"] not in {lesson["attempt_id"], practice["attempt_id"]} and fresh["current_index"] == 0
+    assert fresh["attempt_id"] not in {lesson["attempt_id"], practice["attempt_id"]} and len(fresh["queue"]) == 5 and fresh["correct_count"] == 0
 
 
 def test_posting_without_a_body_defaults_to_a_lesson_attempt(client: APIClient) -> None:
@@ -153,6 +153,7 @@ def test_legendary_doubles_xp_costs_no_hearts_and_marks_the_skill(client: APICli
     assert submit_answer(client, attempt, 0, "wrong").json()["hearts"] == 4
     for index in range(1, 5):
         submit_answer(client, attempt, index, answers[index])
+    submit_answer(client, attempt, 0, answers[0])  # retry of the wrong answer
     result = client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete").json()
     assert (result["mode"], result["xp_awarded"], result["hearts"]) == ("legendary", (10 + 4 * 2) * 2, 4)
     with client.sessions() as db:
@@ -310,3 +311,88 @@ def test_text_normalisation() -> None:
     assert normalize_text("  ¿Qué   TAL?! ") == "qué tal"
     assert normalize_text("Qué", fold_accents=True) == "que"
     assert normalize_text("ÑANDÚ", fold_accents=True) == "nandu"
+
+
+# ------------------------------------------------- wrong answers come back
+def test_a_wrong_answer_is_requeued_at_the_end(client: APIClient) -> None:
+    attempt = start(client)
+    ids = [exercise["id"] for exercise in attempt["exercises"]]
+    assert attempt["queue"] == ids
+    wrong = submit_answer(client, attempt, 0, "wrong").json()
+    assert wrong["correct"] is False and wrong["queue"] == ids[1:] + [ids[0]] and wrong["remaining"] == 5
+    assert wrong["correct_count"] == 0 and wrong["ready_to_complete"] is False
+    right = submit_answer(client, attempt, 1, SET_B[1]).json()
+    assert right["queue"] == ids[2:] + [ids[0]] and right["correct_count"] == 1
+
+
+def test_the_lesson_only_finishes_when_every_exercise_is_correct(client: APIClient) -> None:
+    attempt = start(client)
+    base = f"/api/v1/attempts/{attempt['attempt_id']}"
+    submit_answer(client, attempt, 0, "wrong")
+    for index in range(1, 5):
+        done = submit_answer(client, attempt, index, SET_B[index]).json()
+    assert done["ready_to_complete"] is False and done["queue"] == [attempt["exercises"][0]["id"]]
+    assert client.post(f"{base}/complete").status_code == 409
+    assert submit_answer(client, attempt, 0, "still wrong").json()["queue"] == [attempt["exercises"][0]["id"]]  # asked again
+    final = submit_answer(client, attempt, 0, SET_B[0]).json()
+    assert final["ready_to_complete"] is True and final["queue"] == []
+    result = client.post(f"{base}/complete").json()
+    assert result["perfect"] is False and result["accuracy"] == 71  # 5 correct out of 7 answers
+    assert result["xp_awarded"] == 10 + 2 * 4  # bonus XP only for exercises right on the first try
+
+
+def test_only_the_head_of_the_queue_can_be_answered(client: APIClient) -> None:
+    attempt = start(client)
+    submit_answer(client, attempt, 0, "wrong")
+    assert submit_answer(client, attempt, 0, SET_B[0]).status_code == 409  # exercise 0 is now last in the queue
+    assert submit_answer(client, attempt, 1, SET_B[1]).status_code == 200
+
+
+def test_the_queue_survives_a_refresh(client: APIClient) -> None:
+    attempt = start(client)
+    submit_answer(client, attempt, 0, "wrong")
+    submit_answer(client, attempt, 1, SET_B[1])
+    resumed = start(client)
+    ids = [exercise["id"] for exercise in attempt["exercises"]]
+    assert resumed["attempt_id"] == attempt["attempt_id"]
+    assert resumed["queue"] == ids[2:] + [ids[0]] and resumed["correct_count"] == 1
+
+
+def test_retrying_costs_a_heart_each_time_and_can_fail_the_lesson(client: APIClient) -> None:
+    attempt = start(client)
+    results = [submit_answer(client, attempt, 0, "wrong").json()]
+    assert results[0]["hearts"] == 3
+    for expected_hearts in (2, 1, 0):  # the same exercise keeps coming back (after the others) while answered wrong
+        for index in range(1, 5):
+            if index > 1 or expected_hearts != 2:
+                break
+        # answer the head of the queue wrongly each time
+        head_id = results[-1]["queue"][0]
+        index = next(i for i, exercise in enumerate(attempt["exercises"]) if exercise["id"] == head_id)
+        results.append(submit_answer(client, attempt, index, "wrong").json())
+        assert results[-1]["hearts"] == expected_hearts
+    assert results[-1]["failed"] is True and results[-1]["ready_to_complete"] is False
+    assert client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete").status_code == 409
+
+
+def test_practice_and_legendary_also_retry_but_never_cost_hearts(client: APIClient) -> None:
+    for mode, skill in (("practice", 1), ("legendary", 0)):
+        hearts_before = me(client)["hearts"]
+        attempt = start(client, skill_index=skill, mode=mode)
+        first = submit_answer(client, attempt, 0, "wrong").json()
+        assert first["hearts"] == hearts_before and first["queue"][-1] == attempt["exercises"][0]["id"]
+        for index in range(1, 5):
+            submit_answer(client, attempt, index, ANSWERS_BY_SKILL_INDEX[skill][index])
+        assert submit_answer(client, attempt, 0, ANSWERS_BY_SKILL_INDEX[skill][0]).json()["ready_to_complete"] is True
+        assert client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete").status_code == 200
+
+
+def test_skipping_requeues_the_exercise_too(client: APIClient) -> None:
+    attempt = start(client)
+    skipped = submit_answer(client, attempt, 0, "").json()
+    assert skipped["queue"][-1] == attempt["exercises"][0]["id"] and skipped["hearts"] == 3
+
+
+def test_perfect_lessons_have_no_retries(client: APIClient) -> None:
+    result = finish_perfect_lesson(client)
+    assert result["perfect"] is True and result["accuracy"] == 100 and result["xp_awarded"] == 20

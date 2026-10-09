@@ -156,7 +156,9 @@ class AttemptOut(BaseModel):
     mode: str
     lesson: LessonSummaryOut
     status: str
-    current_index: int
+    queue: list[int]
+    total_exercises: int
+    correct_count: int
     hearts: int
     seconds_left: int | None
     exercises: list[ExerciseOut]
@@ -167,7 +169,9 @@ class AnswerOut(BaseModel):
     explanation: str
     correct_answer: Any
     hearts: int
-    next_index: int
+    queue: list[int]
+    remaining: int
+    correct_count: int
     ready_to_complete: bool
     failed: bool
 
