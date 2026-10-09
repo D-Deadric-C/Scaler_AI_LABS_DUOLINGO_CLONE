@@ -33,20 +33,23 @@ function TypeAnswer({ exercise, answer, setAnswer, disabled }: ExerciseProps) {
 }
 
 function MatchPairs({ exercise, answer, setAnswer, disabled }: ExerciseProps) {
-  const pairs = exercise.payload.pairs as string[][];
-  const left = pairs.map((pair) => pair[0]);
-  const right = [...pairs.map((pair) => pair[1])].reverse();
+  const left = exercise.payload.left as string[];
+  const right = exercise.payload.right as string[];
   const matched = Array.isArray(answer) ? answer as string[][] : [];
   const [pending, setPending] = useState("");
+  const used = new Set(matched.flat());
   const choose = (value: string, side: "left" | "right") => {
-    if (side === "left") { setPending(value); return; }
+    if (used.has(value)) {
+      setAnswer(matched.filter((pair) => !pair.includes(value)));
+      return;
+    }
+    if (side === "left") { setPending(pending === value ? "" : value); return; }
     if (!pending) return;
     const next = [...matched, [pending, value]];
     setAnswer(next);
     setPending("");
   };
-  const used = new Set(matched.flat());
-  return <div className="match-grid"><div>{left.map((value) => <button key={value} disabled={disabled || used.has(value)} className={`answer-card ${pending === value ? "selected" : ""}`} onClick={() => choose(value, "left")}>{value}</button>)}</div><div>{right.map((value) => <button key={value} disabled={disabled || used.has(value)} className="answer-card" onClick={() => choose(value, "right")}>{value}</button>)}</div></div>;
+  return <div className="match-grid"><div>{left.map((value) => <button key={value} disabled={disabled} aria-pressed={pending === value || used.has(value)} className={`answer-card ${pending === value || used.has(value) ? "selected" : ""}`} onClick={() => choose(value, "left")}>{value}</button>)}</div><div>{right.map((value) => <button key={value} disabled={disabled} aria-pressed={used.has(value)} className={`answer-card ${used.has(value) ? "selected" : ""}`} onClick={() => choose(value, "right")}>{value}</button>)}</div></div>;
 }
 
 type ExerciseProps = { exercise: Exercise; answer: Answer; setAnswer: (answer: Answer) => void; disabled: boolean };
@@ -59,9 +62,9 @@ function ExerciseRenderer(props: ExerciseProps) {
   return <TypeAnswer {...props}/>;
 }
 
-function canSubmit(answer: Answer, type: Exercise["type"]) {
+function canSubmit(answer: Answer, exercise: Exercise) {
   if (typeof answer === "string") return answer.trim().length > 0;
-  if (type === "match_pairs") return answer.length >= 3;
+  if (exercise.type === "match_pairs") return answer.length === (exercise.payload.left as string[]).length;
   return answer.length > 0;
 }
 
@@ -79,7 +82,15 @@ export function LessonPlayer({ lessonId, mode = "lesson" }: { lessonId: number; 
 
   useEffect(() => { api.startAttempt(lessonId, mode).then((value) => { setAttempt(value); setHearts(value.hearts); }).catch((reason: Error) => setError(reason.message)); }, [lessonId, mode]);
   useEffect(() => {
-    if (secondsLeft === null || result) return;
+    if (!attempt || attempt.status !== "active" || attempt.current_index < attempt.exercises.length) return;
+    let cancelled = false;
+    api.complete(attempt.attempt_id)
+      .then((value) => { if (!cancelled) { setResult(value); setError(""); } })
+      .catch((reason: Error) => { if (!cancelled) setError(reason.message); });
+    return () => { cancelled = true; };
+  }, [attempt]);
+  useEffect(() => {
+    if (secondsLeft === null || result || (attempt && attempt.current_index >= attempt.exercises.length)) return;
     if (secondsLeft <= 0) {
       if (attempt) void api.abandon(attempt.attempt_id);
       return;
@@ -100,7 +111,7 @@ export function LessonPlayer({ lessonId, mode = "lesson" }: { lessonId: number; 
   };
 
   const check = async (skip = false) => {
-    if (!attempt || !exercise || (!skip && !canSubmit(answer, exercise.type))) return;
+    if (!attempt || !exercise || (!skip && !canSubmit(answer, exercise))) return;
     setBusy(true);
     try {
       const response = await api.answer(attempt.attempt_id, exercise.id, skip ? "" : answer);
@@ -140,9 +151,10 @@ export function LessonPlayer({ lessonId, mode = "lesson" }: { lessonId: number; 
   };
 
   if (error && !attempt) return <div className="center-state lesson-state"><Mascot mood="sad"/><h1>Lesson unavailable</h1><p>{error}</p><Link href="/learn" className="game-button">BACK TO PATH</Link></div>;
-  if (secondsLeft === 0) return <div className="completion-screen"><Mascot mood="sad" size={150}/><span className="eyebrow red">TIME’S UP</span><h1>Great effort!</h1><p>Try the legendary challenge again and answer all five before the timer ends.</p><button className="game-button wide" onClick={() => location.reload()}>TRY AGAIN</button><Link href="/practice" className="text-button">BACK TO PRACTICE</Link></div>;
-  if (!attempt || !exercise) return <div className="center-state lesson-state"><Mascot/><div className="loading-dots"><i/><i/><i/></div><p>Preparing your lesson…</p></div>;
   if (result) return <div className="completion-screen"><div className="confetti" aria-hidden>{Array.from({ length: 22 }, (_, index) => <i key={index} style={{ "--i": index } as React.CSSProperties}/>)}</div><Mascot mood="celebrate" size={150}/><span className="eyebrow">LESSON COMPLETE!</span><h1>Outstanding!</h1><div className="completion-stats"><div><GameIcon name="bolt" size={40}/><strong>{result.xp_awarded}</strong><span>XP EARNED</span></div><div><GameIcon name="trophy" size={40}/><strong>{result.accuracy}%</strong><span>ACCURACY</span></div><div><GameIcon name="flame" size={40}/><strong>{result.streak}</strong><span>DAY STREAK</span></div></div>{result.new_achievements.length > 0 && <div className="achievement-toast">🏅 Achievement unlocked: {result.new_achievements[0].title}</div>}<Link href="/learn" className="game-button wide">CONTINUE</Link></div>;
+  if (secondsLeft === 0) return <div className="completion-screen"><Mascot mood="sad" size={150}/><span className="eyebrow red">TIME’S UP</span><h1>Great effort!</h1><p>Try the legendary challenge again and answer all five before the timer ends.</p><button className="game-button wide" onClick={() => location.reload()}>TRY AGAIN</button><Link href="/practice" className="text-button">BACK TO PRACTICE</Link></div>;
+  if (attempt && !exercise && error) return <div className="center-state lesson-state"><Mascot mood="sad"/><h1>Couldn’t finish your lesson</h1><p>{error}</p><button className="game-button" onClick={() => { setError(""); void api.complete(attempt.attempt_id).then(setResult).catch((reason: Error) => setError(reason.message)); }}>TRY AGAIN</button><Link href="/learn" className="text-button">BACK TO PATH</Link></div>;
+  if (!attempt || !exercise) return <div className="center-state lesson-state"><Mascot/><div className="loading-dots"><i/><i/><i/></div><p>{attempt ? "Finishing your lesson…" : "Preparing your lesson…"}</p></div>;
   if (feedback?.failed) return <div className="completion-screen"><Mascot mood="sad" size={150}/><span className="eyebrow red">OUT OF HEARTS</span><h1>Don’t give up!</h1><p>Practice to refill your hearts and come back stronger.</p><button className="game-button wide" onClick={async () => { await api.refill(); location.reload(); }}>PRACTICE + REFILL</button><Link href="/learn" className="text-button">RETURN TO PATH</Link></div>;
   return (
     <div className="lesson-page reference-lesson-page">
@@ -154,7 +166,7 @@ export function LessonPlayer({ lessonId, mode = "lesson" }: { lessonId: number; 
       </main>
       <footer className={`lesson-footer ${feedback ? feedback.correct ? "correct" : "incorrect" : ""}`}>
         {feedback ? <div className="feedback-copy" aria-live="polite"><span className="feedback-icon">{feedback.correct ? "✓" : "×"}</span><div><h2>{feedback.correct ? "Great job!" : "Correct solution:"}</h2>{!feedback.correct && <p>{Array.isArray(feedback.correct_answer) ? feedback.correct_answer.join(" ") : String(feedback.correct_answer)}</p>}<div className="lesson-feedback-actions"><button type="button">ᶻz TOO EASY</button><button type="button">△ TOO DIFFICULT</button><button type="button">⚑ REPORT</button></div></div></div> : <button className="text-button" disabled={busy} onClick={() => check(true)}>SKIP</button>}
-        <button className={`game-button ${feedback ? feedback.correct ? "green" : "red-button" : ""}`} disabled={busy || (!feedback && !canSubmit(answer, exercise.type))} onClick={feedback ? next : () => check()}>{busy ? "CHECKING…" : feedback ? "CONTINUE" : "CHECK"}</button>
+        <button className={`game-button ${feedback ? feedback.correct ? "green" : "red-button" : ""}`} disabled={busy || (!feedback && !canSubmit(answer, exercise))} onClick={feedback ? next : () => check()}>{busy ? "CHECKING…" : feedback ? "CONTINUE" : "CHECK"}</button>
       </footer>
       {exitOpen && <div className="lesson-exit-overlay" role="presentation"><div className="lesson-exit-dialog" role="dialog" aria-modal="true" aria-label="Exit lesson"><h2>Are you sure you want to quit?</h2><p>Your progress in this lesson won&apos;t be saved.</p><button type="button" className="game-button" onClick={() => setExitOpen(false)}>KEEP LEARNING</button><button type="button" className="text-button" onClick={leaveLesson}>QUIT</button></div></div>}
       {error && <div className="error-toast">{error}</div>}

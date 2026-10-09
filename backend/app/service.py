@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from random import shuffle
 from typing import Any
 
 from fastapi import HTTPException
@@ -138,16 +139,22 @@ def attempt_payload(db: Session, attempt: LessonAttempt) -> dict[str, Any]:
     lesson = db.get(Lesson, attempt.lesson_id)
     exercises = db.scalars(select(Exercise).where(Exercise.lesson_id == attempt.lesson_id).order_by(Exercise.position)).all()
     user = get_user(db, attempt.user_id)
+    def public_exercise(exercise: Exercise) -> dict[str, Any]:
+        payload = exercise.payload
+        if exercise.type == "match_pairs":
+            pairs = payload["pairs"]
+            right = [pair[1] for pair in pairs]
+            shuffle(right)
+            payload = {"left": [pair[0] for pair in pairs], "right": right}
+        return {"id": exercise.id, "type": exercise.type, "prompt": exercise.prompt, "hint": exercise.hint, "payload": payload}
+
     return {
         "attempt_id": attempt.id,
         "lesson": {"id": lesson.id, "title": lesson.title, "xp_reward": lesson.xp_reward},
         "status": attempt.status,
         "current_index": attempt.current_index,
         "hearts": user.hearts,
-        "exercises": [
-            {"id": exercise.id, "type": exercise.type, "prompt": exercise.prompt, "hint": exercise.hint, "payload": exercise.payload}
-            for exercise in exercises
-        ],
+        "exercises": [public_exercise(exercise) for exercise in exercises],
     }
 
 
@@ -162,6 +169,13 @@ def check_answer(exercise: Exercise, submitted: Any) -> bool:
         return [normalize_text(item) for item in tokens] == [normalize_text(item) for item in answer["tokens"]]
     if exercise.type == "match_pairs":
         pairs = submitted if isinstance(submitted, list) else []
+        if any(
+            not isinstance(pair, list)
+            or len(pair) != 2
+            or not all(isinstance(word, str) for word in pair)
+            for pair in pairs
+        ):
+            return False
         normalized = {tuple(sorted((normalize_text(a), normalize_text(b)))) for a, b in pairs}
         expected = {tuple(sorted((normalize_text(a), normalize_text(b)))) for a, b in answer["pairs"]}
         return normalized == expected
@@ -277,6 +291,7 @@ def complete_attempt(db: Session, attempt_id: int) -> dict[str, Any]:
     if attempt.mode == "lesson":
         progress.completed_lessons = max(progress.completed_lessons, 1)
         progress.crowns = max(progress.crowns, 1)
+    db.flush()
     new_achievements = evaluate_achievements(db, user)
     db.commit()
     return completion_payload(db, attempt, user, new_achievements, accuracy)
