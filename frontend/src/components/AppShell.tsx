@@ -4,6 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { useHoverMenu } from "@/lib/useHoverMenu";
+import { ArtSlot } from "./learn/ArtSlot";
 import { ToastProvider, useToast } from "./Toast";
 
 const learnNav = [
@@ -17,6 +19,28 @@ const learnNav = [
   ["/settings", "MORE", "opetions.svg"],
 ] as const;
 
+/** The purple MORE entry: hover or click opens a small menu (test, settings, help, log out). */
+function MoreMenu({ asset, pathname }: { asset: string; pathname: string }) {
+  const toast = useToast();
+  const { open, root, dismiss, triggerProps, panelProps } = useHoverMenu<"more">();
+  return (
+    <div className="more-wrap" ref={root}>
+      <button type="button" className={`reference-nav-item ${open || pathname.startsWith("/settings") ? "active" : ""}`} aria-haspopup="menu" {...triggerProps("more")}>
+        <Image src={`/learn-assets/${asset}`} width={35} height={35} alt="" aria-hidden />
+        <span>MORE</span>
+      </button>
+      {open ? (
+        <div className="more-menu" role="menu" {...panelProps}>
+          <button type="button" role="menuitem" className="more-test" aria-label="Duolingo test" onClick={() => { toast.soon("The Duolingo test"); dismiss(); }}><ArtSlot name="english-test" width={244} height={37} fallback={<><Image src="/learn-assets/duolingocompact.svg" width={30} height={30} alt="" aria-hidden />DUOLINGO SPANISH TEST</>} /></button>
+          <Link href="/settings" role="menuitem" onClick={dismiss}>SETTINGS</Link>
+          <button type="button" role="menuitem" onClick={() => { toast.soon("The help center"); dismiss(); }}>HELP</button>
+          <button type="button" role="menuitem" onClick={() => { toast.show("You're using the demo learner — signing out isn't needed"); dismiss(); }}>LOG OUT</button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ReferenceSidebar({ pathname }: { pathname: string }) {
   const toast = useToast();
   return (
@@ -29,6 +53,7 @@ function ReferenceSidebar({ pathname }: { pathname: string }) {
         {learnNav.map(([href, label, asset]) => {
           const route = href.split("#")[0];
           const active = !href.includes("#") && pathname.startsWith(route);
+          if (label === "MORE") return <MoreMenu key={label} asset={asset} pathname={pathname} />;
           if (href.includes("#")) { // sections that are not built yet
             return (
               <button key={label} type="button" className="reference-nav-item" onClick={() => toast.soon(label.charAt(0) + label.slice(1).toLowerCase())}>

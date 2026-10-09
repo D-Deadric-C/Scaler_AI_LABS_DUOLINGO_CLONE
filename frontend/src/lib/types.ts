@@ -14,6 +14,10 @@ export type UserStats = {
   today_xp: number;
   dark_mode: boolean;
   next_heart_at: string | null;
+  /** Learner-local ISO dates: the last day a lesson was finished, and today's date. */
+  last_active_date: string | null;
+  today: string;
+  tz_offset_minutes: number;
 };
 
 export type PathSkill = {
@@ -35,6 +39,7 @@ export type PathUnit = {
   objective: string;
   color: string;
   skills: PathSkill[];
+  chest: { status: "locked" | "ready" | "opened"; gems: number };
 };
 
 export type LeaderboardEntry = {

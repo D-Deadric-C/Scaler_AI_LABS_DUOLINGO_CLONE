@@ -20,7 +20,7 @@ export const api = {
   bootstrap: () => request<Bootstrap>("/bootstrap"),
   path: () => request<Bootstrap>("/courses/1/path"),
   me: () => request<UserStats>("/me"),
-  updateSettings: (settings: { dark_mode?: boolean; daily_goal?: number }) => request<UserStats>("/me/settings", { method: "PATCH", body: JSON.stringify(settings) }),
+  updateSettings: (settings: { dark_mode?: boolean; daily_goal?: number; tz_offset_minutes?: number }) => request<UserStats>("/me/settings", { method: "PATCH", body: JSON.stringify(settings) }),
   leaderboard: () => request<{ league: string; ends_in: string; ends_at: string; entries: LeaderboardEntry[] }>("/leaderboards/weekly"),
   achievements: () => request<Achievement[]>("/achievements"),
   quests: () => request<{ ends_in: string; quests: Quest[] }>("/quests"),
@@ -33,5 +33,6 @@ export const api = {
   complete: (attemptId: number) => request<LessonResult>(`/attempts/${attemptId}/complete`, { method: "POST", body: "{}" }),
   abandon: (attemptId: number) => request<{ status: string }>(`/attempts/${attemptId}/abandon`, { method: "POST", body: "{}" }),
   refill: () => request<{ hearts: number; message: string }>("/hearts/practice-refill", { method: "POST", body: "{}" }),
+  openChest: (unitId: number) => request<{ gems_awarded: number; gems: number }>(`/units/${unitId}/chest`, { method: "POST", body: "{}" }),
   gemRefill: () => request<{ hearts: number; gems: number; message: string }>("/hearts/gem-refill", { method: "POST", body: "{}" }),
 };

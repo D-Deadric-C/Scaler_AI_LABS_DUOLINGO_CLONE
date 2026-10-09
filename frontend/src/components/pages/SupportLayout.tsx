@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "@/lib/api";
 import type { Bootstrap } from "@/lib/types";
-import { ReferenceRightRail, ReferenceStatsRow } from "../LearnDashboard";
+import { RightRail } from "../learn/RightRail";
+import { StatsRow } from "../learn/StatsRow";
+import "../learn/learn.css";
 
 export type RailKind = "standard" | "quests" | "shop" | "league" | "profile" | "none";
 
@@ -14,13 +16,13 @@ export function SupportFooter() {
 }
 
 function LeagueRail({ data }: { data: Bootstrap }) {
-  return <aside className="reference-support-custom-rail"><ReferenceStatsRow data={data} /><section className="reference-social-card"><h3>Set your status</h3><div className="reference-status-avatar">{data.user.display_name[0]}</div><div className="reference-status-icons">{["😎", "🎉", "💪", "👀", "🍿", "🇺🇸", "🦉", "💯", "🏆", "🥇"].map((icon, index) => <span key={`${icon}-${index}`}>{icon}</span>)}</div></section><SupportFooter /></aside>;
+  return <aside className="reference-support-custom-rail"><StatsRow data={data} /><section className="reference-social-card"><h3>Set your status</h3><div className="reference-status-avatar">{data.user.display_name[0]}</div><div className="reference-status-icons">{["😎", "🎉", "💪", "👀", "🍿", "🇺🇸", "🦉", "💯", "🏆", "🥇"].map((icon, index) => <span key={`${icon}-${index}`}>{icon}</span>)}</div></section><SupportFooter /></aside>;
 }
 
 function ProfileRail({ data, onSoon }: { data: Bootstrap; onSoon: (feature: string) => void }) {
   return (
     <aside className="reference-support-custom-rail">
-      <ReferenceStatsRow data={data} />
+      <StatsRow data={data} />
       <section className="reference-social-card reference-friends-card"><div className="reference-friend-tabs"><strong>FOLLOWING</strong><strong>FOLLOWERS</strong></div><Image className="reference-friends-art" src="/duolingo-assets/a925a18c6be921a81bf0e13102983168.svg" width={306} height={142} alt="A group of learners" /><p>Learning is more fun and effective when you connect with others.</p></section>
       <section className="reference-social-card reference-add-friends"><h3>Add friends</h3>
         <button type="button" onClick={() => onSoon("Finding friends")}><Image src="/duolingo-assets/48b8884ac9d7513e65f3a2b54984c5c4.svg" width={35} height={35} alt="" aria-hidden />Find friends<span>❯</span></button>
@@ -39,9 +41,9 @@ export function SupportLayout({ children, rail = "standard", onSoon }: { childre
   return (
     <div className={`reference-support-layout rail-${rail}`}>
       <div className="reference-support-main">{children}</div>
-      {rail === "quests" ? <aside className="reference-support-quest-rail">{data && <ReferenceStatsRow data={data} />}<div className="reference-quest-rail-card"><Image src="/duolingo-assets/e07e459ea20aef826b42caa71498d85f.svg" width={116} height={138} alt="" aria-hidden /><h3>Monthly challenges unlock soon!</h3><p>Complete each month&apos;s challenge to earn exclusive badges</p><Link href="/learn">START A LESSON</Link></div><SupportFooter /></aside> : null}
-      {data && rail === "standard" ? <ReferenceRightRail data={data} /> : null}
-      {data && rail === "shop" ? <ReferenceRightRail data={data} showSuper={false} /> : null}
+      {rail === "quests" ? <aside className="reference-support-quest-rail">{data && <StatsRow data={data} />}<div className="reference-quest-rail-card"><Image src="/duolingo-assets/e07e459ea20aef826b42caa71498d85f.svg" width={116} height={138} alt="" aria-hidden /><h3>Monthly challenges unlock soon!</h3><p>Complete each month&apos;s challenge to earn exclusive badges</p><Link href="/learn">START A LESSON</Link></div><SupportFooter /></aside> : null}
+      {data && rail === "standard" ? <RightRail data={data} /> : null}
+      {data && rail === "shop" ? <RightRail data={data} showSuper={false} /> : null}
       {data && rail === "league" ? <LeagueRail data={data} /> : null}
       {data && rail === "profile" ? <ProfileRail data={data} onSoon={soon} /> : null}
     </div>

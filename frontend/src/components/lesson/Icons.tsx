@@ -1,3 +1,6 @@
+import Image from "next/image";
+import { ArtSlot } from "../learn/ArtSlot";
+
 /** Small inline icons used by the lesson player. */
 export function SpeakerIcon({ size = 22 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden><path fill="currentColor" d="M3 9v6h4l5 4V5L7 9H3Z" /><path fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" d="M15.5 8.5a5 5 0 0 1 0 7m2.8-9.8a9 9 0 0 1 0 12.6" /></svg>;
@@ -32,10 +35,18 @@ export function TargetIcon({ size = 24 }: { size?: number }) {
 }
 
 export function GemIcon({ size = 22 }: { size?: number }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden><path fill="#47b8ee" d="M12 1.5 21 6.5v11L12 22.5 3 17.5v-11L12 1.5Z" /><path fill="#9be0ff" d="M12 1.5 21 6.5 12 11 3 6.5l9-5Z" /><path fill="#1993cd" d="M12 11v11.5l-9-5v-11L12 11Z" /></svg>;
+  return <ArtSlot name="gem" width={size} fallback={<GemDrawing size={size} />} />;
+}
+
+function GemDrawing({ size }: { size: number }) {
+  return <Image src="/learn-assets/bluepoints.svg" width={size} height={size} alt="" aria-hidden />;
 }
 
 export function HeartIcon({ size = 30, infinite = false }: { size?: number; infinite?: boolean }) {
+  return <ArtSlot name={infinite ? "heart-unlimited" : "heart-full"} width={size} fallback={<HeartDrawing size={size} infinite={infinite} />} />;
+}
+
+function HeartDrawing({ size, infinite }: { size: number; infinite: boolean }) {
   return (
     <svg width={size} height={size} viewBox="0 0 34 34" aria-hidden>
       <defs><linearGradient id="lx-heart-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#26d77f" /><stop offset=".5" stopColor="#2690e4" /><stop offset="1" stopColor="#bf5ff4" /></linearGradient></defs>
