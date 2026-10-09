@@ -23,9 +23,6 @@ Assignment Duolingo Clone.docx
 duolingo-clone-plan.md
 duolingo-product-blueprint.md
 learnpageimages/
-.agents/
-.codex/
-.cursor/
 frontend/AGENTS.md
 frontend/public/learn-assets/custom/
 frontend/src/app/lesson-preview/
