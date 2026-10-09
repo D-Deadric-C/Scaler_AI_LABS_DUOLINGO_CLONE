@@ -213,11 +213,11 @@ def seed_database(db: Session) -> None:
 
     users = [
         User(username="learner", display_name="Alex", avatar_color="#1cb0f6", total_xp=185, gems=480, hearts=4, current_streak=7, longest_streak=12, last_active_date=clock.current_time().date() - timedelta(days=1), daily_goal=20),
-        User(username="maya", display_name="Maya", avatar_color="#ce82ff", total_xp=940, current_streak=18),
-        User(username="leo", display_name="Leo", avatar_color="#ff9600", total_xp=810, current_streak=11),
-        User(username="sam", display_name="Sam", avatar_color="#ff4b4b", total_xp=720, current_streak=9),
-        User(username="nora", display_name="Nora", avatar_color="#58cc02", total_xp=640, current_streak=6),
-        User(username="ari", display_name="Ari", avatar_color="#2b70c9", total_xp=510, current_streak=4),
+        User(username="maya", display_name="Maya", avatar_color="#ce82ff", total_xp=940, current_streak=18, longest_streak=18),
+        User(username="leo", display_name="Leo", avatar_color="#ff9600", total_xp=810, current_streak=11, longest_streak=11),
+        User(username="sam", display_name="Sam", avatar_color="#ff4b4b", total_xp=720, current_streak=9, longest_streak=9),
+        User(username="nora", display_name="Nora", avatar_color="#58cc02", total_xp=640, current_streak=6, longest_streak=6),
+        User(username="ari", display_name="Ari", avatar_color="#2b70c9", total_xp=510, current_streak=4, longest_streak=4),
     ]
     db.add_all(users)
     db.flush()

@@ -2,10 +2,22 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, JSON, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
+
+
+def one_of(column: str, values: tuple[str, ...]) -> str:
+    return f"{column} IN ({', '.join(repr(value) for value in values)})"
+
+
+EXERCISE_TYPES = ("multiple_choice", "word_bank", "match_pairs", "fill_blank", "type_answer")
+ATTEMPT_MODES = ("lesson", "practice", "legendary")
+ATTEMPT_STATUSES = ("active", "completed", "failed", "abandoned")
+HEART_EVENT_KINDS = ("mistake", "practice_refill", "gem_refill", "practice_reward")
+XP_SOURCES = ("lesson", "practice", "legendary", "seed")
+ACHIEVEMENT_METRICS = ("lessons", "perfect", "xp", "streak")
 
 
 def utc_now() -> datetime:
@@ -27,7 +39,7 @@ class Course(Base):
 
 class Unit(Base):
     __tablename__ = "units"
-    __table_args__ = (UniqueConstraint("course_id", "position"),)
+    __table_args__ = (UniqueConstraint("course_id", "position"), CheckConstraint("position >= 1", name="ck_units_position"))
 
     id: Mapped[int] = mapped_column(primary_key=True)
     course_id: Mapped[int] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"), index=True)
@@ -41,7 +53,7 @@ class Unit(Base):
 
 class Skill(Base):
     __tablename__ = "skills"
-    __table_args__ = (UniqueConstraint("unit_id", "position"),)
+    __table_args__ = (UniqueConstraint("unit_id", "position"), CheckConstraint("position >= 1", name="ck_skills_position"))
 
     id: Mapped[int] = mapped_column(primary_key=True)
     unit_id: Mapped[int] = mapped_column(ForeignKey("units.id", ondelete="CASCADE"), index=True)
@@ -55,7 +67,7 @@ class Skill(Base):
 
 class Lesson(Base):
     __tablename__ = "lessons"
-    __table_args__ = (UniqueConstraint("skill_id", "position"),)
+    __table_args__ = (UniqueConstraint("skill_id", "position"), CheckConstraint("position >= 1", name="ck_lessons_position"), CheckConstraint("xp_reward >= 0", name="ck_lessons_xp_reward"))
 
     id: Mapped[int] = mapped_column(primary_key=True)
     skill_id: Mapped[int] = mapped_column(ForeignKey("skills.id", ondelete="CASCADE"), index=True)
@@ -68,7 +80,11 @@ class Lesson(Base):
 
 class Exercise(Base):
     __tablename__ = "exercises"
-    __table_args__ = (UniqueConstraint("lesson_id", "position"),)
+    __table_args__ = (
+        UniqueConstraint("lesson_id", "position"),
+        CheckConstraint("position >= 1", name="ck_exercises_position"),
+        CheckConstraint(one_of("type", EXERCISE_TYPES), name="ck_exercises_type"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     lesson_id: Mapped[int] = mapped_column(ForeignKey("lessons.id", ondelete="CASCADE"), index=True)
@@ -84,6 +100,14 @@ class Exercise(Base):
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint("max_hearts >= 1", name="ck_users_max_hearts"),
+        CheckConstraint("hearts >= 0 AND hearts <= max_hearts", name="ck_users_hearts_range"),
+        CheckConstraint("total_xp >= 0", name="ck_users_total_xp"),
+        CheckConstraint("gems >= 0", name="ck_users_gems"),
+        CheckConstraint("current_streak >= 0 AND longest_streak >= current_streak", name="ck_users_streaks"),
+        CheckConstraint("daily_goal >= 1", name="ck_users_daily_goal"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(60), unique=True, index=True)
@@ -103,7 +127,10 @@ class User(Base):
 
 class SkillProgress(Base):
     __tablename__ = "skill_progress"
-    __table_args__ = (UniqueConstraint("user_id", "skill_id"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "skill_id"),
+        CheckConstraint("completed_lessons >= 0 AND crowns >= 0", name="ck_skill_progress_counts"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
@@ -115,6 +142,13 @@ class SkillProgress(Base):
 
 class LessonAttempt(Base):
     __tablename__ = "lesson_attempts"
+    __table_args__ = (
+        Index("ix_lesson_attempts_user_lesson_status", "user_id", "lesson_id", "status"),
+        CheckConstraint(one_of("mode", ATTEMPT_MODES), name="ck_lesson_attempts_mode"),
+        CheckConstraint(one_of("status", ATTEMPT_STATUSES), name="ck_lesson_attempts_status"),
+        CheckConstraint("current_index >= 0 AND correct_count >= 0 AND correct_count <= current_index", name="ck_lesson_attempts_progress"),
+        CheckConstraint("hearts_lost >= 0 AND xp_awarded >= 0", name="ck_lesson_attempts_totals"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
@@ -128,6 +162,7 @@ class LessonAttempt(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    answers: Mapped[list[ExerciseAttempt]] = relationship(cascade="all, delete-orphan", passive_deletes=True)
 
 
 class ExerciseAttempt(Base):
@@ -144,7 +179,10 @@ class ExerciseAttempt(Base):
 
 class DailyActivity(Base):
     __tablename__ = "daily_activity"
-    __table_args__ = (UniqueConstraint("user_id", "activity_date"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "activity_date"),
+        CheckConstraint("xp_earned >= 0 AND lessons_completed >= 0", name="ck_daily_activity_totals"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
@@ -155,6 +193,10 @@ class DailyActivity(Base):
 
 class Achievement(Base):
     __tablename__ = "achievements"
+    __table_args__ = (
+        CheckConstraint("threshold >= 1", name="ck_achievements_threshold"),
+        CheckConstraint(one_of("metric", ACHIEVEMENT_METRICS), name="ck_achievements_metric"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     slug: Mapped[str] = mapped_column(String(60), unique=True)
@@ -171,12 +213,17 @@ class UserAchievement(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    achievement_id: Mapped[int] = mapped_column(ForeignKey("achievements.id", ondelete="CASCADE"))
+    achievement_id: Mapped[int] = mapped_column(ForeignKey("achievements.id", ondelete="CASCADE"), index=True)
     awarded_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
 class XPEvent(Base):
     __tablename__ = "xp_events"
+    __table_args__ = (
+        Index("ix_xp_events_user_created", "user_id", "created_at"),
+        CheckConstraint("amount >= 0", name="ck_xp_events_amount"),
+        CheckConstraint(one_of("source", XP_SOURCES), name="ck_xp_events_source"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
@@ -190,10 +237,14 @@ class HeartEvent(Base):
     """Ledger of deliberate heart changes (mistakes, refills, practice rewards); passive regeneration is derived."""
 
     __tablename__ = "heart_events"
+    __table_args__ = (
+        CheckConstraint(one_of("kind", HEART_EVENT_KINDS), name="ck_heart_events_kind"),
+        CheckConstraint("hearts_after >= 0 AND gems_spent >= 0", name="ck_heart_events_totals"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    attempt_id: Mapped[int | None] = mapped_column(ForeignKey("lesson_attempts.id", ondelete="SET NULL"), nullable=True)
+    attempt_id: Mapped[int | None] = mapped_column(ForeignKey("lesson_attempts.id", ondelete="SET NULL"), nullable=True, index=True)
     kind: Mapped[str] = mapped_column(String(30))
     delta: Mapped[int] = mapped_column(Integer)
     hearts_after: Mapped[int] = mapped_column(Integer)

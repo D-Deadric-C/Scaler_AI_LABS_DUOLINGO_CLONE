@@ -38,7 +38,10 @@ def get_db() -> Iterator[Session]:
 
 
 def ensure_schema(bind=None) -> None:
-    """Create missing tables and add missing nullable columns (lightweight stand-in for migrations)."""
+    """Create missing tables, columns and indexes (lightweight stand-in for migrations).
+
+    CHECK constraints are enforced on freshly created databases; SQLite cannot add them to existing tables.
+    """
     target = bind or engine
     Base.metadata.create_all(bind=target)
     inspector = inspect(target)
@@ -52,3 +55,5 @@ def ensure_schema(bind=None) -> None:
                     raise RuntimeError(f"Cannot auto-add required column {table.name}.{column.name}")
                 ddl_type = column.type.compile(dialect=target.dialect)
                 connection.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {ddl_type}'))
+            for index in table.indexes:
+                index.create(connection, checkfirst=True)
