@@ -5,15 +5,15 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..models import Achievement, LessonAttempt, User, UserAchievement
+from ..models import Achievement, AttemptMode, AttemptStatus, LessonAttempt, User, UserAchievement
 from . import clock
 from .streaks import effective_streak
 from .users import get_user
 
 
 def learner_metrics(db: Session, user: User, today: date) -> dict[str, int]:
-    completed = (LessonAttempt.user_id == user.id, LessonAttempt.status == "completed")
-    lessons = db.scalar(select(func.count(func.distinct(LessonAttempt.lesson_id))).where(*completed, LessonAttempt.mode == "lesson")) or 0
+    completed = (LessonAttempt.user_id == user.id, LessonAttempt.status == AttemptStatus.COMPLETED)
+    lessons = db.scalar(select(func.count(func.distinct(LessonAttempt.lesson_id))).where(*completed, LessonAttempt.mode == AttemptMode.LESSON)) or 0
     perfect = db.scalar(select(func.count()).select_from(LessonAttempt).where(*completed, LessonAttempt.current_index > 0, LessonAttempt.correct_count == LessonAttempt.current_index)) or 0
     return {"lessons": lessons, "perfect": perfect, "xp": user.total_xp, "streak": effective_streak(user, today)}
 

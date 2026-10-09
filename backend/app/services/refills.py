@@ -4,6 +4,7 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from ..models import HeartEventKind
 from .hearts import GEM_REFILL_COST, log_heart_event, next_heart_at
 from .users import get_user
 
@@ -20,7 +21,7 @@ def practice_refill(db: Session, user_id: int) -> dict[str, Any]:
         raise HTTPException(409, "Hearts are already full")
     gained = user.max_hearts - user.hearts
     user.hearts = user.max_hearts
-    log_heart_event(db, user, "practice_refill", gained)
+    log_heart_event(db, user, HeartEventKind.PRACTICE_REFILL, gained)
     db.commit()
     return {"hearts": user.hearts, "gems": user.gems, "message": "Practice complete — hearts restored!"}
 
@@ -34,6 +35,6 @@ def gem_refill(db: Session, user_id: int) -> dict[str, Any]:
     gained = user.max_hearts - user.hearts
     user.gems -= GEM_REFILL_COST
     user.hearts = user.max_hearts
-    log_heart_event(db, user, "gem_refill", gained, gems_spent=GEM_REFILL_COST)
+    log_heart_event(db, user, HeartEventKind.GEM_REFILL, gained, gems_spent=GEM_REFILL_COST)
     db.commit()
     return {"hearts": user.hearts, "gems": user.gems, "message": "Hearts refilled!"}

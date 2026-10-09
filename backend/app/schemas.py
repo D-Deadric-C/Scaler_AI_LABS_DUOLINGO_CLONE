@@ -2,6 +2,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from .models import AttemptMode, SkillStatus
+
 MAX_ANSWER_ITEMS = 60
 MAX_ANSWER_TEXT = 300
 
@@ -37,7 +39,7 @@ class SettingsRequest(BaseModel):
 
 
 class AttemptCreateRequest(BaseModel):
-    mode: Literal["lesson", "practice", "legendary"] = "lesson"
+    mode: AttemptMode = AttemptMode.LESSON
 
 
 # --------------------------------------------------------------- responses
@@ -64,7 +66,7 @@ class SkillOut(BaseModel):
     title: str
     description: str
     icon: str
-    status: Literal["completed", "available", "locked"]
+    status: SkillStatus
     progress: int
     total_lessons: int
     crowns: int

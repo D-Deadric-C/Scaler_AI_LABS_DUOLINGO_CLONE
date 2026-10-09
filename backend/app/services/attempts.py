@@ -1,5 +1,5 @@
 """Lesson attempt state machine: start/resume, answer, complete, abandon."""
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException
@@ -7,12 +7,25 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..models import DailyActivity, Exercise, ExerciseAttempt, Lesson, LessonAttempt, SkillProgress, User, XPEvent
+from ..models import (
+    AttemptMode,
+    AttemptStatus,
+    DailyActivity,
+    Exercise,
+    ExerciseAttempt,
+    HeartEventKind,
+    Lesson,
+    LessonAttempt,
+    SkillProgress,
+    SkillStatus,
+    User,
+    XPEvent,
+)
 from . import clock
 from .achievements import evaluate_achievements
 from .exercises import check_answer, display_answer, lesson_exercises, public_exercise
 from .hearts import PRACTICE_HEART_REWARD, log_heart_event, lose_heart
-from .path import skill_states
+from .path import course_id_for_skill, skill_states
 from .streaks import effective_streak, update_streak
 from .users import get_user, today_xp_for
 
@@ -26,7 +39,7 @@ def attempt_expired(attempt: LessonAttempt, now: datetime) -> bool:
 
 
 def seconds_left(attempt: LessonAttempt, now: datetime) -> int | None:
-    if attempt.expires_at is None or attempt.status != "active":
+    if attempt.expires_at is None or attempt.status != AttemptStatus.ACTIVE:
         return None
     return max(0, int((attempt.expires_at - now).total_seconds()))
 
@@ -44,25 +57,25 @@ def start_attempt(db: Session, user_id: int, lesson_id: int, mode: str) -> dict[
     lesson = db.get(Lesson, lesson_id)
     if not lesson:
         raise HTTPException(404, "Lesson not found")
-    state = next((item for item in skill_states(db, user.id) if item["skill"].id == lesson.skill_id), None)
-    if state is None or state["status"] == "locked":
+    state = next((item for item in skill_states(db, user.id, course_id_for_skill(db, lesson.skill_id)) if item["skill"].id == lesson.skill_id), None)
+    if state is None or state["status"] == SkillStatus.LOCKED:
         raise HTTPException(403, "Complete the previous skill to unlock this lesson")
-    if mode == "lesson" and lesson.position > state["completed_lessons"] + 1:
+    if mode == AttemptMode.LESSON and lesson.position > state["completed_lessons"] + 1:
         raise HTTPException(403, "Finish the earlier lessons in this skill first")
-    if mode == "legendary" and state["status"] != "completed":
+    if mode == AttemptMode.LEGENDARY and state["status"] != SkillStatus.COMPLETED:
         raise HTTPException(403, "Complete this skill to unlock the legendary challenge")
-    if mode == "lesson" and user.hearts <= 0:
+    if mode == AttemptMode.LESSON and user.hearts <= 0:
         raise HTTPException(409, "You need a heart to start this lesson")
     active = db.scalar(
         select(LessonAttempt).where(
             LessonAttempt.user_id == user.id,
             LessonAttempt.lesson_id == lesson.id,
             LessonAttempt.mode == mode,
-            LessonAttempt.status == "active",
+            LessonAttempt.status == AttemptStatus.ACTIVE,
         )
     )
     if active and attempt_expired(active, now):
-        active.status = "abandoned"
+        active.status = AttemptStatus.ABANDONED
         active.completed_at = now
         active = None
     attempt = active
@@ -72,7 +85,7 @@ def start_attempt(db: Session, user_id: int, lesson_id: int, mode: str) -> dict[
             lesson_id=lesson.id,
             mode=mode,
             started_at=now,
-            expires_at=now + timedelta(seconds=LEGENDARY_SECONDS) if mode == "legendary" else None,
+            expires_at=now + timedelta(seconds=LEGENDARY_SECONDS) if mode == AttemptMode.LEGENDARY else None,
         )
         db.add(attempt)
     db.commit()
@@ -102,8 +115,8 @@ def read_attempt(db: Session, user_id: int, attempt_id: int) -> dict[str, Any]:
 
 def abandon_attempt(db: Session, user_id: int, attempt_id: int) -> dict[str, str]:
     attempt = get_attempt(db, attempt_id, user_id)
-    if attempt.status == "active":
-        attempt.status = "abandoned"
+    if attempt.status == AttemptStatus.ACTIVE:
+        attempt.status = AttemptStatus.ABANDONED
         attempt.completed_at = clock.current_time()
         db.commit()
     return {"status": attempt.status}
@@ -112,10 +125,10 @@ def abandon_attempt(db: Session, user_id: int, attempt_id: int) -> dict[str, str
 def answer_attempt(db: Session, user_id: int, attempt_id: int, exercise_id: int, submitted: Any) -> dict[str, Any]:
     now = clock.current_time()
     attempt = get_attempt(db, attempt_id, user_id)
-    if attempt.status != "active":
+    if attempt.status != AttemptStatus.ACTIVE:
         raise HTTPException(409, "Attempt is not active")
     if attempt_expired(attempt, now):
-        attempt.status = "abandoned"
+        attempt.status = AttemptStatus.ABANDONED
         attempt.completed_at = now
         db.commit()
         raise HTTPException(409, "Time is up")
@@ -130,13 +143,13 @@ def answer_attempt(db: Session, user_id: int, attempt_id: int, exercise_id: int,
     db.add(ExerciseAttempt(attempt_id=attempt.id, exercise_id=exercise.id, submitted_answer={"value": submitted}, correct=correct, created_at=now))
     if correct:
         attempt.correct_count += 1
-    elif attempt.mode == "lesson" and lose_heart(user, now):
+    elif attempt.mode == AttemptMode.LESSON and lose_heart(user, now):
         attempt.hearts_lost += 1
-        log_heart_event(db, user, "mistake", -1, attempt.id)
+        log_heart_event(db, user, HeartEventKind.MISTAKE, -1, attempt.id)
     attempt.current_index += 1
-    failed = attempt.mode == "lesson" and user.hearts == 0 and not correct
+    failed = attempt.mode == AttemptMode.LESSON and user.hearts == 0 and not correct
     if failed:
-        attempt.status = "failed"
+        attempt.status = AttemptStatus.FAILED
         attempt.completed_at = now
     try:
         db.commit()
@@ -158,23 +171,23 @@ def complete_attempt(db: Session, user_id: int, attempt_id: int) -> dict[str, An
     now = clock.current_time()
     attempt = get_attempt(db, attempt_id, user_id)
     user = get_user(db, attempt.user_id, now)
-    if attempt.status == "completed":
+    if attempt.status == AttemptStatus.COMPLETED:
         return completion_payload(db, attempt, user, [])
     lesson = db.get(Lesson, attempt.lesson_id)
     exercise_count = db.scalar(select(func.count()).select_from(Exercise).where(Exercise.lesson_id == lesson.id)) or 0
-    if attempt.status != "active" or attempt.current_index < exercise_count:
+    if attempt.status != AttemptStatus.ACTIVE or attempt.current_index < exercise_count:
         raise HTTPException(409, "Attempt is not ready to complete")
     earned = lesson.xp_reward + attempt.correct_count * XP_PER_CORRECT_ANSWER
-    if attempt.mode == "legendary":
+    if attempt.mode == AttemptMode.LEGENDARY:
         earned *= 2
     # Atomically claim the completion: exactly one concurrent request wins and applies the rewards.
     claimed = db.execute(
-        update(LessonAttempt).where(LessonAttempt.id == attempt.id, LessonAttempt.status == "active").values(status="completed", completed_at=now)
+        update(LessonAttempt).where(LessonAttempt.id == attempt.id, LessonAttempt.status == AttemptStatus.ACTIVE).values(status=AttemptStatus.COMPLETED, completed_at=now)
     ).rowcount
     if claimed == 0:
         db.rollback()
         db.refresh(attempt)
-        if attempt.status == "completed":
+        if attempt.status == AttemptStatus.COMPLETED:
             return completion_payload(db, attempt, get_user(db, attempt.user_id), [])
         raise HTTPException(409, "Attempt is not ready to complete")
     db.refresh(attempt)
@@ -194,13 +207,13 @@ def complete_attempt(db: Session, user_id: int, attempt_id: int) -> dict[str, An
     except IntegrityError:  # a concurrent request completed the same attempt first
         db.rollback()
         attempt = get_attempt(db, attempt_id, user_id)
-        if attempt.status == "completed":
+        if attempt.status == AttemptStatus.COMPLETED:
             return completion_payload(db, attempt, get_user(db, attempt.user_id), [])
         raise HTTPException(409, "Attempt could not be completed") from None
     return completion_payload(db, attempt, user, new_achievements)
 
 
-def record_daily_activity(db: Session, user: User, today, xp: int) -> None:
+def record_daily_activity(db: Session, user: User, today: date, xp: int) -> None:
     activity = db.scalar(select(DailyActivity).where(DailyActivity.user_id == user.id, DailyActivity.activity_date == today))
     if not activity:
         activity = DailyActivity(user_id=user.id, activity_date=today, xp_earned=0, lessons_completed=0)
@@ -214,14 +227,14 @@ def apply_skill_progress(db: Session, user: User, lesson: Lesson, attempt: Lesso
     if not progress:
         progress = SkillProgress(user_id=user.id, skill_id=lesson.skill_id, completed_lessons=0, crowns=0, legendary=False)
         db.add(progress)
-    if attempt.mode == "lesson":
+    if attempt.mode == AttemptMode.LESSON:
         progress.completed_lessons = max(progress.completed_lessons, lesson.position)
         progress.crowns = max(progress.crowns, progress.completed_lessons)
-    elif attempt.mode == "legendary":
+    elif attempt.mode == AttemptMode.LEGENDARY:
         progress.legendary = True
-    elif attempt.mode == "practice" and user.hearts < user.max_hearts:
+    elif attempt.mode == AttemptMode.PRACTICE and user.hearts < user.max_hearts:
         user.hearts = min(user.max_hearts, user.hearts + PRACTICE_HEART_REWARD)
-        log_heart_event(db, user, "practice_reward", PRACTICE_HEART_REWARD, attempt.id)
+        log_heart_event(db, user, HeartEventKind.PRACTICE_REWARD, PRACTICE_HEART_REWARD, attempt.id)
 
 
 def completion_payload(db: Session, attempt: LessonAttempt, user: User, achievements: list[dict[str, Any]]) -> dict[str, Any]:

@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.exc import OperationalError
 
-from app.models import Exercise, HeartEvent, Lesson, LessonAttempt, SkillProgress, User, XPEvent
+from app.models import Course, Exercise, HeartEvent, Lesson, LessonAttempt, Skill, Unit, SkillProgress, User, XPEvent
 from app.services.exercises import check_answer, normalize_text
 from conftest import APIClient, Clock
 from helpers import ANSWERS_BY_SKILL_INDEX, SET_B, all_skills, finish_perfect_lesson, start, submit_answer
@@ -59,6 +59,29 @@ def test_skills_with_several_lessons_unlock_in_order(client: APIClient) -> None:
     client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete")
     skills = all_skills(client)
     assert (skills[1]["status"], skills[2]["status"]) == ("completed", "available")
+
+
+def test_courses_are_independent_paths(client: APIClient) -> None:
+    with client.sessions() as db:
+        course = Course(slug="french", title="French", target_language="French", flag="FR")
+        db.add(course)
+        db.flush()
+        unit = Unit(course_id=course.id, position=1, title="Unit 1", objective="Bonjour")
+        db.add(unit)
+        db.flush()
+        skill = Skill(unit_id=unit.id, position=1, title="Greetings", description="Say hello")
+        db.add(skill)
+        db.flush()
+        lesson = Lesson(skill_id=skill.id, position=1, title="Greetings 1")
+        db.add(lesson)
+        db.commit()
+        course_id, lesson_id = course.id, lesson.id
+    french = client.get(f"/api/v1/courses/{course_id}/path").json()
+    assert french["course"]["title"] == "French" and len(french["units"]) == 1
+    assert [skill["status"] for skill in french["units"][0]["skills"]] == ["available"]  # unaffected by Spanish progress
+    assert client.post(f"/api/v1/lessons/{lesson_id}/attempts", json={"mode": "lesson"}).status_code == 200
+    assert [skill["status"] for skill in all_skills(client)[:3]] == ["completed", "available", "locked"]
+    assert client.get("/api/v1/courses/999/path").status_code == 404
 
 
 def test_leaderboard_rank_improves_as_xp_is_earned(client: APIClient) -> None:

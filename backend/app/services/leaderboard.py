@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..models import User, XPEvent
+from ..models import User, XPEvent, XPSource
 from . import clock
 from .users import weekly_xp_by_user
 
@@ -24,7 +24,7 @@ def ensure_bot_weekly_xp(db: Session, now: datetime | None = None) -> None:
     for user in db.scalars(select(User).where(User.username.in_(BOT_WEEKLY_XP))).all():
         key = f"seed:weekly:{user.id}:{monday:%Y%m%d}"
         if not db.scalar(select(XPEvent.id).where(XPEvent.idempotency_key == key)):
-            db.add(XPEvent(user_id=user.id, amount=BOT_WEEKLY_XP[user.username], source="seed", idempotency_key=key, created_at=monday))
+            db.add(XPEvent(user_id=user.id, amount=BOT_WEEKLY_XP[user.username], source=XPSource.SEED, idempotency_key=key, created_at=monday))
             added = True
     if added:
         try:

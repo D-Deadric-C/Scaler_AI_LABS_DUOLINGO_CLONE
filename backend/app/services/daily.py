@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..models import DailyActivity, LessonAttempt
+from ..models import AttemptStatus, DailyActivity, LessonAttempt
 from . import clock
 from .streaks import effective_streak
 from .users import get_user
@@ -22,7 +22,7 @@ def quests_payload(db: Session, user_id: int) -> dict[str, Any]:
     perfect = db.scalar(
         select(func.count()).select_from(LessonAttempt).where(
             LessonAttempt.user_id == user.id,
-            LessonAttempt.status == "completed",
+            LessonAttempt.status == AttemptStatus.COMPLETED,
             LessonAttempt.completed_at >= day_start,
             LessonAttempt.current_index > 0,
             LessonAttempt.correct_count == LessonAttempt.current_index,

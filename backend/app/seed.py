@@ -1,22 +1,23 @@
 from datetime import timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import (
+    AttemptMode,
+    AttemptStatus,
+    XPSource,
     Achievement,
     Course,
     DailyActivity,
     Exercise,
     ExerciseAttempt,
-    HeartEvent,
     Lesson,
     LessonAttempt,
     Skill,
     SkillProgress,
     Unit,
     User,
-    UserAchievement,
     XPEvent,
     utc_now,
 )
@@ -79,64 +80,18 @@ def ensure_achievements(db: Session) -> None:
 
 def seed_learner_week(db: Session, user: User) -> None:
     """Record the sample learner's starting weekly XP once (never re-granted in later weeks)."""
-    already_seeded = db.scalar(select(XPEvent.id).where(XPEvent.user_id == user.id, XPEvent.source == "seed").limit(1))
+    already_seeded = db.scalar(select(XPEvent.id).where(XPEvent.user_id == user.id, XPEvent.source == XPSource.SEED).limit(1))
     if already_seeded is None:
         monday = clock.week_start(clock.current_time())
-        db.add(XPEvent(user_id=user.id, amount=LEARNER_WEEKLY_SEED_XP, source="seed", idempotency_key=f"seed:weekly:{user.id}:{monday:%Y%m%d}", created_at=monday))
+        db.add(XPEvent(user_id=user.id, amount=LEARNER_WEEKLY_SEED_XP, source=XPSource.SEED, idempotency_key=f"seed:weekly:{user.id}:{monday:%Y%m%d}", created_at=monday))
         db.flush()
-
-
-def reset_learner(db: Session) -> None:
-    """Restore the sample learner to the seeded starting state (other learners are untouched)."""
-    user = db.scalar(select(User).where(User.username == LEARNER_USERNAME))
-    first_skill = db.scalar(select(Skill).join(Unit).order_by(Unit.position, Skill.position).limit(1))
-    if user is None or first_skill is None:
-        raise LookupError("Seed data is missing")
-    attempt_ids = select(LessonAttempt.id).where(LessonAttempt.user_id == user.id)
-    db.execute(delete(HeartEvent).where(HeartEvent.user_id == user.id))
-    db.execute(delete(ExerciseAttempt).where(ExerciseAttempt.attempt_id.in_(attempt_ids)))
-    for model in (LessonAttempt, XPEvent, SkillProgress, DailyActivity, UserAchievement):
-        db.execute(delete(model).where(model.user_id == user.id))
-    now = clock.current_time()
-    for field, value in LEARNER_BASELINE.items():
-        setattr(user, field, value)
-    user.hearts_updated_at = now
-    user.last_active_date = now.date() - timedelta(days=1)
-    db.add(SkillProgress(user_id=user.id, skill_id=first_skill.id, completed_lessons=1, crowns=1))
-    lesson = db.scalar(select(Lesson).where(Lesson.skill_id == first_skill.id).order_by(Lesson.position).limit(1))
-    seed_sample_completion(db, user, lesson)
-    db.add(DailyActivity(user_id=user.id, activity_date=now.date(), xp_earned=15, lessons_completed=0))
-    seed_learner_week(db, user)
-    evaluate_achievements(db, user, now.date())
-    db.commit()
-
-
-def simulate_next_day(db: Session) -> None:
-    """Shift the learner's history one day into the past, as if a day had elapsed (streak/goal/heart demo)."""
-    user = db.scalar(select(User).where(User.username == LEARNER_USERNAME))
-    if user is None:
-        raise LookupError("Seed data is missing")
-    day = timedelta(days=1)
-    for row in db.scalars(select(DailyActivity).where(DailyActivity.user_id == user.id).order_by(DailyActivity.activity_date)).all():
-        row.activity_date -= day  # oldest first so the unique (user, date) constraint is never violated
-        db.flush()
-    for event in db.scalars(select(XPEvent).where(XPEvent.user_id == user.id)).all():
-        event.created_at -= day
-    for attempt in db.scalars(select(LessonAttempt).where(LessonAttempt.user_id == user.id)).all():
-        attempt.started_at -= day
-        if attempt.completed_at:
-            attempt.completed_at -= day
-    if user.last_active_date:
-        user.last_active_date -= day
-    user.hearts_updated_at -= day
-    db.commit()
 
 
 def seed_sample_completion(db: Session, user: User, lesson: Lesson) -> None:
     existing = db.scalar(select(LessonAttempt.id).where(
         LessonAttempt.user_id == user.id,
         LessonAttempt.lesson_id == lesson.id,
-        LessonAttempt.status == "completed",
+        LessonAttempt.status == AttemptStatus.COMPLETED,
     ))
     if existing is not None:
         return
@@ -146,8 +101,8 @@ def seed_sample_completion(db: Session, user: User, lesson: Lesson) -> None:
     attempt = LessonAttempt(
         user_id=user.id,
         lesson_id=lesson.id,
-        mode="lesson",
-        status="completed",
+        mode=AttemptMode.LESSON,
+        status=AttemptStatus.COMPLETED,
         current_index=len(exercises),
         correct_count=len(exercises),
         xp_awarded=20,

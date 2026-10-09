@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from enum import StrEnum
 
 from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, JSON, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -8,16 +9,57 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 
 
-def one_of(column: str, values: tuple[str, ...]) -> str:
-    return f"{column} IN ({', '.join(repr(value) for value in values)})"
+class AttemptMode(StrEnum):
+    LESSON = "lesson"
+    PRACTICE = "practice"
+    LEGENDARY = "legendary"
 
 
-EXERCISE_TYPES = ("multiple_choice", "word_bank", "match_pairs", "fill_blank", "type_answer")
-ATTEMPT_MODES = ("lesson", "practice", "legendary")
-ATTEMPT_STATUSES = ("active", "completed", "failed", "abandoned")
-HEART_EVENT_KINDS = ("mistake", "practice_refill", "gem_refill", "practice_reward")
-XP_SOURCES = ("lesson", "practice", "legendary", "seed")
-ACHIEVEMENT_METRICS = ("lessons", "perfect", "xp", "streak")
+class AttemptStatus(StrEnum):
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    ABANDONED = "abandoned"
+
+
+class SkillStatus(StrEnum):
+    COMPLETED = "completed"
+    AVAILABLE = "available"
+    LOCKED = "locked"
+
+
+class ExerciseType(StrEnum):
+    MULTIPLE_CHOICE = "multiple_choice"
+    WORD_BANK = "word_bank"
+    MATCH_PAIRS = "match_pairs"
+    FILL_BLANK = "fill_blank"
+    TYPE_ANSWER = "type_answer"
+
+
+class HeartEventKind(StrEnum):
+    MISTAKE = "mistake"
+    PRACTICE_REFILL = "practice_refill"
+    GEM_REFILL = "gem_refill"
+    PRACTICE_REWARD = "practice_reward"
+
+
+class XPSource(StrEnum):
+    LESSON = "lesson"
+    PRACTICE = "practice"
+    LEGENDARY = "legendary"
+    SEED = "seed"
+
+
+class AchievementMetric(StrEnum):
+    LESSONS = "lessons"
+    PERFECT = "perfect"
+    XP = "xp"
+    STREAK = "streak"
+
+
+def one_of(column: str, values: type[StrEnum]) -> str:
+    """SQL CHECK expression limiting ``column`` to the members of an enum."""
+    return f"{column} IN ({', '.join(repr(member.value) for member in values)})"
 
 
 def utc_now() -> datetime:
@@ -83,7 +125,7 @@ class Exercise(Base):
     __table_args__ = (
         UniqueConstraint("lesson_id", "position"),
         CheckConstraint("position >= 1", name="ck_exercises_position"),
-        CheckConstraint(one_of("type", EXERCISE_TYPES), name="ck_exercises_type"),
+        CheckConstraint(one_of("type", ExerciseType), name="ck_exercises_type"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -144,8 +186,8 @@ class LessonAttempt(Base):
     __tablename__ = "lesson_attempts"
     __table_args__ = (
         Index("ix_lesson_attempts_user_lesson_status", "user_id", "lesson_id", "status"),
-        CheckConstraint(one_of("mode", ATTEMPT_MODES), name="ck_lesson_attempts_mode"),
-        CheckConstraint(one_of("status", ATTEMPT_STATUSES), name="ck_lesson_attempts_status"),
+        CheckConstraint(one_of("mode", AttemptMode), name="ck_lesson_attempts_mode"),
+        CheckConstraint(one_of("status", AttemptStatus), name="ck_lesson_attempts_status"),
         CheckConstraint("current_index >= 0 AND correct_count >= 0 AND correct_count <= current_index", name="ck_lesson_attempts_progress"),
         CheckConstraint("hearts_lost >= 0 AND xp_awarded >= 0", name="ck_lesson_attempts_totals"),
     )
@@ -195,7 +237,7 @@ class Achievement(Base):
     __tablename__ = "achievements"
     __table_args__ = (
         CheckConstraint("threshold >= 1", name="ck_achievements_threshold"),
-        CheckConstraint(one_of("metric", ACHIEVEMENT_METRICS), name="ck_achievements_metric"),
+        CheckConstraint(one_of("metric", AchievementMetric), name="ck_achievements_metric"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -222,7 +264,7 @@ class XPEvent(Base):
     __table_args__ = (
         Index("ix_xp_events_user_created", "user_id", "created_at"),
         CheckConstraint("amount >= 0", name="ck_xp_events_amount"),
-        CheckConstraint(one_of("source", XP_SOURCES), name="ck_xp_events_source"),
+        CheckConstraint(one_of("source", XPSource), name="ck_xp_events_source"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -238,7 +280,7 @@ class HeartEvent(Base):
 
     __tablename__ = "heart_events"
     __table_args__ = (
-        CheckConstraint(one_of("kind", HEART_EVENT_KINDS), name="ck_heart_events_kind"),
+        CheckConstraint(one_of("kind", HeartEventKind), name="ck_heart_events_kind"),
         CheckConstraint("hearts_after >= 0 AND gems_spent >= 0", name="ck_heart_events_totals"),
     )
 
