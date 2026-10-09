@@ -4,7 +4,7 @@ from datetime import timedelta
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from ..models import DailyActivity, ExerciseAttempt, HeartEvent, Lesson, LessonAttempt, Skill, SkillProgress, Unit, User, UserAchievement, XPEvent
+from ..models import DailyActivity, ExerciseAttempt, HeartEvent, Lesson, LessonAttempt, Skill, SkillProgress, Unit, UnitChestClaim, User, UserAchievement, XPEvent
 from ..seed import LEARNER_BASELINE, LEARNER_USERNAME, seed_learner_week, seed_sample_completion
 from . import clock
 from .achievements import evaluate_achievements
@@ -19,19 +19,20 @@ def reset_learner(db: Session) -> None:
     attempt_ids = select(LessonAttempt.id).where(LessonAttempt.user_id == user.id)
     db.execute(delete(HeartEvent).where(HeartEvent.user_id == user.id))
     db.execute(delete(ExerciseAttempt).where(ExerciseAttempt.attempt_id.in_(attempt_ids)))
-    for model in (LessonAttempt, XPEvent, SkillProgress, DailyActivity, UserAchievement):
+    for model in (LessonAttempt, XPEvent, SkillProgress, DailyActivity, UserAchievement, UnitChestClaim):
         db.execute(delete(model).where(model.user_id == user.id))
     now = clock.current_time()
     for field, value in LEARNER_BASELINE.items():
         setattr(user, field, value)
     user.hearts_updated_at = now
-    user.last_active_date = now.date() - timedelta(days=1)
+    today = clock.learner_today(user.tz_offset_minutes, now)
+    user.last_active_date = today - timedelta(days=1)
     db.add(SkillProgress(user_id=user.id, skill_id=first_skill.id, completed_lessons=1, crowns=1))
     lesson = db.scalar(select(Lesson).where(Lesson.skill_id == first_skill.id).order_by(Lesson.position).limit(1))
     seed_sample_completion(db, user, lesson)
-    db.add(DailyActivity(user_id=user.id, activity_date=now.date(), xp_earned=15, lessons_completed=0))
+    db.add(DailyActivity(user_id=user.id, activity_date=today, xp_earned=15, lessons_completed=0))
     seed_learner_week(db, user)
-    evaluate_achievements(db, user, now.date())
+    evaluate_achievements(db, user, today)
     db.commit()
 
 

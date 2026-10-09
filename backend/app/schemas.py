@@ -36,6 +36,7 @@ class AnswerRequest(BaseModel):
 class SettingsRequest(BaseModel):
     dark_mode: bool | None = None
     daily_goal: int | None = Field(default=None, ge=5, le=100)
+    tz_offset_minutes: int | None = Field(default=None, ge=-840, le=840)
 
 
 class AttemptCreateRequest(BaseModel):
@@ -59,6 +60,9 @@ class UserOut(BaseModel):
     today_xp: int
     dark_mode: bool
     next_heart_at: str | None
+    last_active_date: str | None
+    today: str
+    tz_offset_minutes: int
 
 
 class SkillOut(BaseModel):
@@ -74,6 +78,16 @@ class SkillOut(BaseModel):
     xp_reward: int
 
 
+class ChestOut(BaseModel):
+    status: Literal["locked", "ready", "opened"]
+    gems: int
+
+
+class ChestClaimOut(BaseModel):
+    gems_awarded: int
+    gems: int
+
+
 class UnitOut(BaseModel):
     id: int
     position: int
@@ -81,6 +95,7 @@ class UnitOut(BaseModel):
     objective: str
     color: str
     skills: list[SkillOut]
+    chest: ChestOut
 
 
 class CourseOut(BaseModel):

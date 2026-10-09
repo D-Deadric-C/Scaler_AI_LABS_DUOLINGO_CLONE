@@ -79,5 +79,8 @@ def ensure_schema(bind=None) -> None:
                     raise RuntimeError(f"Cannot auto-add required column {table.name}.{column.name}")
                 ddl_type = column.type.compile(dialect=target.dialect)
                 connection.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {ddl_type}'))
+            for column in table.columns:  # required columns added earlier (or by a failed upgrade) may hold NULLs: give them their default
+                if not column.nullable and column.default is not None and column.default.is_scalar:
+                    connection.execute(text(f'UPDATE "{table.name}" SET "{column.name}" = :value WHERE "{column.name}" IS NULL'), {"value": column.default.arg})
             for index in table.indexes:
                 index.create(connection, checkfirst=True)

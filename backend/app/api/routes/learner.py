@@ -19,7 +19,7 @@ def me(db: Session = Depends(get_db), user_id: int = Depends(current_user_id)) -
 @router.patch("/settings", response_model=schemas.UserOut)
 def patch_settings(body: schemas.SettingsRequest, db: Session = Depends(get_db), user_id: int = Depends(current_user_id)) -> dict:
     """Update dark mode and/or the daily XP goal (5-100)."""
-    return update_settings(db, user_id, body.dark_mode, body.daily_goal)
+    return update_settings(db, user_id, body.dark_mode, body.daily_goal, body.tz_offset_minutes)
 
 
 @router.get("/profile", response_model=schemas.ProfileOut)

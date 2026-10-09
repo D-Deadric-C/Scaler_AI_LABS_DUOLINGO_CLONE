@@ -20,7 +20,7 @@ def learner_metrics(db: Session, user: User, today: date) -> dict[str, int]:
 
 def evaluate_achievements(db: Session, user: User, today: date | None = None) -> list[dict[str, Any]]:
     """Award every badge whose threshold is met and return the newly earned ones."""
-    metrics = learner_metrics(db, user, today or clock.today_utc())
+    metrics = learner_metrics(db, user, today or clock.learner_today(user.tz_offset_minutes))
     awarded_ids = set(db.scalars(select(UserAchievement.achievement_id).where(UserAchievement.user_id == user.id)).all())
     newly_awarded = []
     for achievement in db.scalars(select(Achievement).order_by(Achievement.id)).all():
@@ -32,7 +32,7 @@ def evaluate_achievements(db: Session, user: User, today: date | None = None) ->
 
 def achievements_payload(db: Session, user_id: int) -> list[dict[str, Any]]:
     user = get_user(db, user_id)
-    metrics = learner_metrics(db, user, clock.today_utc())
+    metrics = learner_metrics(db, user, clock.learner_today(user.tz_offset_minutes))
     earned = set(db.scalars(select(UserAchievement.achievement_id).where(UserAchievement.user_id == user.id)).all())
     return [
         {"id": item.id, "title": item.title, "description": item.description, "icon": item.icon, "earned": item.id in earned, "progress": min(metrics.get(item.metric, 0), item.threshold), "threshold": item.threshold}

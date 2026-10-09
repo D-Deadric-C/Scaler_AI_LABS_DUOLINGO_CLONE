@@ -35,7 +35,7 @@ def today_xp_for(db: Session, user_id: int, today: date) -> int:
 
 def serialize_user(db: Session, user: User, now: datetime | None = None) -> dict[str, Any]:
     now = now or clock.current_time()
-    today = clock.today_utc(now)
+    today = clock.learner_today(user.tz_offset_minutes, now)
     return {
         "id": user.id,
         "username": user.username,
@@ -52,6 +52,9 @@ def serialize_user(db: Session, user: User, now: datetime | None = None) -> dict
         "today_xp": today_xp_for(db, user.id, today),
         "dark_mode": user.dark_mode,
         "next_heart_at": next_heart_at(user),
+        "last_active_date": user.last_active_date.isoformat() if user.last_active_date else None,
+        "today": today.isoformat(),
+        "tz_offset_minutes": user.tz_offset_minutes,
     }
 
 
@@ -62,11 +65,13 @@ def me_payload(db: Session, user_id: int) -> dict[str, Any]:
     return payload
 
 
-def update_settings(db: Session, user_id: int, dark_mode: bool | None, daily_goal: int | None) -> dict[str, Any]:
+def update_settings(db: Session, user_id: int, dark_mode: bool | None, daily_goal: int | None, tz_offset_minutes: int | None = None) -> dict[str, Any]:
     user = get_user(db, user_id)
     if dark_mode is not None:
         user.dark_mode = dark_mode
     if daily_goal is not None:
         user.daily_goal = daily_goal
+    if tz_offset_minutes is not None:
+        user.tz_offset_minutes = tz_offset_minutes
     db.commit()
     return serialize_user(db, user)

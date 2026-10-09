@@ -225,7 +225,7 @@ def complete_attempt(db: Session, user_id: int, attempt_id: int) -> dict[str, An
             return completion_payload(db, attempt, get_user(db, attempt.user_id), [])
         raise HTTPException(409, "Attempt is not ready to complete")
     db.refresh(attempt)
-    today = clock.today_utc(now)
+    today = clock.learner_today(user.tz_offset_minutes, now)
     key = f"attempt:{attempt.id}:completion"
     if not db.scalar(select(XPEvent.id).where(XPEvent.idempotency_key == key)):
         db.add(XPEvent(user_id=user.id, amount=earned, source=attempt.mode, idempotency_key=key, created_at=now))
@@ -274,7 +274,7 @@ def apply_skill_progress(db: Session, user: User, lesson: Lesson, attempt: Lesso
 def completion_payload(db: Session, attempt: LessonAttempt, user: User, achievements: list[dict[str, Any]]) -> dict[str, Any]:
     answered = attempt.current_index  # every submitted answer, including retries of wrong ones
     accuracy = attempt.correct_count / max(answered, 1)
-    today = clock.today_utc()
+    today = clock.learner_today(user.tz_offset_minutes)
     today_xp = today_xp_for(db, user.id, today)
     return {
         "attempt_id": attempt.id,

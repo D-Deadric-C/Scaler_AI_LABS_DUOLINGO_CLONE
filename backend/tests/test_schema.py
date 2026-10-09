@@ -83,3 +83,18 @@ def test_legacy_exercise_attempts_table_is_rebuilt_with_turns(tmp_path) -> None:
         assert [tuple(row) for row in rows] == [(1, 10, 1), (1, 11, 2), (2, 10, 1)]
         connection.exec_driver_sql("INSERT INTO exercise_attempts (attempt_id, exercise_id, turn, submitted_answer, correct, created_at) VALUES (1, 10, 3, '{}', 0, CURRENT_TIMESTAMP)")  # a retry is now allowed
     engine.dispose()
+
+
+def test_new_columns_are_backfilled_with_their_default(tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'users.db'}")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY, username VARCHAR(60), display_name VARCHAR(80), avatar_color VARCHAR(20), "
+            "total_xp INTEGER, gems INTEGER, hearts INTEGER, max_hearts INTEGER, hearts_updated_at DATETIME, current_streak INTEGER, "
+            "longest_streak INTEGER, last_active_date DATE, daily_goal INTEGER, dark_mode BOOLEAN)"
+        )
+        connection.exec_driver_sql("INSERT INTO users (id, username, display_name) VALUES (1, 'old', 'Old User')")
+    ensure_schema(engine)
+    with engine.connect() as connection:
+        assert connection.exec_driver_sql("SELECT tz_offset_minutes FROM users WHERE id = 1").scalar() == 0
+    engine.dispose()

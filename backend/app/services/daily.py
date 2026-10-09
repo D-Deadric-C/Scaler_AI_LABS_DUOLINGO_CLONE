@@ -1,5 +1,5 @@
 """Daily goal views: derived quests and the activity calendar."""
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -14,11 +14,11 @@ from .users import get_user
 def quests_payload(db: Session, user_id: int) -> dict[str, Any]:
     now = clock.current_time()
     user = get_user(db, user_id, now)
-    today = clock.today_utc(now)
+    today = clock.learner_today(user.tz_offset_minutes, now)
     activity = db.scalar(select(DailyActivity).where(DailyActivity.user_id == user.id, DailyActivity.activity_date == today))
     xp = activity.xp_earned if activity else 0
     lessons = activity.lessons_completed if activity else 0
-    day_start = datetime.combine(today, datetime.min.time())
+    day_start = clock.local_day_start_utc(today, user.tz_offset_minutes)
     perfect = db.scalar(
         select(func.count()).select_from(LessonAttempt).where(
             LessonAttempt.user_id == user.id,
@@ -40,7 +40,7 @@ def quests_payload(db: Session, user_id: int) -> dict[str, Any]:
 def activity_payload(db: Session, user_id: int, days: int) -> dict[str, Any]:
     now = clock.current_time()
     user = get_user(db, user_id, now)
-    today = clock.today_utc(now)
+    today = clock.learner_today(user.tz_offset_minutes, now)
     start = today - timedelta(days=days - 1)
     rows = {row.activity_date: row for row in db.scalars(select(DailyActivity).where(DailyActivity.user_id == user.id, DailyActivity.activity_date >= start)).all()}
     result = []

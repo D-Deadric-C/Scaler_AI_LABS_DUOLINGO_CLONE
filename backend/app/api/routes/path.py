@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from ... import schemas
+from ...services.chests import claim_chest
 from ...services.path import path_payload
 from ..deps import current_user_id, get_db
 
@@ -14,3 +15,9 @@ def course_path(course_id: int, db: Session = Depends(get_db), user_id: int = De
     payload = path_payload(db, user_id, course_id)
     db.commit()  # persists lazily regenerated hearts
     return payload
+
+
+@router.post("/units/{unit_id}/chest", response_model=schemas.ChestClaimOut)
+def open_unit_chest(unit_id: int, db: Session = Depends(get_db), user_id: int = Depends(current_user_id)) -> dict:
+    """Open the unit's reward chest (once, after every skill in the unit is complete) for bonus gems."""
+    return claim_chest(db, user_id, unit_id)

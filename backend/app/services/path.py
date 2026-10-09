@@ -77,6 +77,9 @@ def path_payload(db: Session, user_id: int, course_id: int | None = None) -> dic
     states_by_unit: dict[int, list[dict[str, Any]]] = {}
     for state in states:
         states_by_unit.setdefault(state["skill"].unit_id, []).append(state)
+    from .chests import CHEST_GEMS, chest_status, claimed_unit_ids  # local import: chests builds on this module
+
+    claimed = claimed_unit_ids(db, user.id)
     units = []
     for unit in db.scalars(select(Unit).where(Unit.course_id == course.id).order_by(Unit.position)).all():
         skills = []
@@ -95,7 +98,8 @@ def path_payload(db: Session, user_id: int, course_id: int | None = None) -> dic
                 "lesson_id": lesson.id if lesson else None,
                 "xp_reward": lesson.xp_reward if lesson else 0,
             })
-        units.append({"id": unit.id, "position": unit.position, "title": unit.title, "objective": unit.objective, "color": unit.color, "skills": skills})
+        chest = {"status": chest_status([skill["status"] for skill in skills], unit.id in claimed), "gems": CHEST_GEMS}
+        units.append({"id": unit.id, "position": unit.position, "title": unit.title, "objective": unit.objective, "color": unit.color, "skills": skills, "chest": chest})
     return {
         "course": {"id": course.id, "title": course.title, "flag": course.flag},
         "user": serialize_user(db, user, now),

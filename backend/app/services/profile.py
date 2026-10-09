@@ -19,7 +19,7 @@ def profile_payload(db: Session, user_id: int) -> dict[str, Any]:
         "achievements": achievements_payload(db, user_id),
         "league": leaderboard_payload(db, user_id)["league"],
         "completed_skills": sum(1 for state in states if state["status"] == SkillStatus.COMPLETED),
-        "lessons_completed": learner_metrics(db, user, clock.today_utc())["lessons"],
+        "lessons_completed": learner_metrics(db, user, clock.learner_today(user.tz_offset_minutes))["lessons"],
     }
     db.commit()
     return payload

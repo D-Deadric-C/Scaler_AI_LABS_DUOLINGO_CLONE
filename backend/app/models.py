@@ -149,6 +149,7 @@ class User(Base):
         CheckConstraint("gems >= 0", name="ck_users_gems"),
         CheckConstraint("current_streak >= 0 AND longest_streak >= current_streak", name="ck_users_streaks"),
         CheckConstraint("daily_goal >= 1", name="ck_users_daily_goal"),
+        CheckConstraint("tz_offset_minutes BETWEEN -840 AND 840", name="ck_users_tz_offset"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -165,6 +166,7 @@ class User(Base):
     last_active_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     daily_goal: Mapped[int] = mapped_column(Integer, default=20)
     dark_mode: Mapped[bool] = mapped_column(Boolean, default=False)
+    tz_offset_minutes: Mapped[int] = mapped_column(Integer, default=0)  # learner's UTC offset; decides which calendar day a lesson counts for
 
 
 class SkillProgress(Base):
@@ -295,3 +297,16 @@ class HeartEvent(Base):
     hearts_after: Mapped[int] = mapped_column(Integer)
     gems_spent: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, index=True)
+
+
+class UnitChestClaim(Base):
+    """A learner opened the reward chest at the end of a unit (once per unit)."""
+
+    __tablename__ = "unit_chest_claims"
+    __table_args__ = (UniqueConstraint("user_id", "unit_id"), CheckConstraint("gems >= 0", name="ck_unit_chest_claims_gems"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    unit_id: Mapped[int] = mapped_column(ForeignKey("units.id", ondelete="CASCADE"), index=True)
+    gems: Mapped[int] = mapped_column(Integer)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)

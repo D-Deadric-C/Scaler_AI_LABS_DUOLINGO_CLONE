@@ -13,6 +13,16 @@ def today_utc(now: datetime | None = None) -> date:
     return (now or current_time()).date()
 
 
+def learner_today(offset_minutes: int, now: datetime | None = None) -> date:
+    """The learner's calendar date (their timezone), which streaks and the daily goal are measured in."""
+    return ((now or current_time()) + timedelta(minutes=offset_minutes)).date()
+
+
+def local_day_start_utc(day: date, offset_minutes: int) -> datetime:
+    """UTC instant at which the learner's calendar ``day`` begins."""
+    return datetime.combine(day, datetime.min.time()) - timedelta(minutes=offset_minutes)
+
+
 def week_start(now: datetime) -> datetime:
     """Monday 00:00 UTC of the week containing ``now``."""
     midnight = datetime.combine(now.date(), datetime.min.time())

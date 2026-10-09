@@ -396,3 +396,71 @@ def test_skipping_requeues_the_exercise_too(client: APIClient) -> None:
 def test_perfect_lessons_have_no_retries(client: APIClient) -> None:
     result = finish_perfect_lesson(client)
     assert result["perfect"] is True and result["accuracy"] == 100 and result["xp_awarded"] == 20
+
+
+# ---------------------------------------------------------------- unit chest
+def chest(client: APIClient, unit_index: int = 0) -> dict:
+    return client.get("/api/v1/courses/1/path").json()["units"][unit_index]["chest"]
+
+
+def unit_id(client: APIClient, unit_index: int = 0) -> int:
+    return client.get("/api/v1/courses/1/path").json()["units"][unit_index]["id"]
+
+
+def test_chest_is_locked_until_every_skill_in_the_unit_is_complete(client: APIClient) -> None:
+    assert chest(client)["status"] == "locked"
+    assert client.post(f"/api/v1/units/{unit_id(client)}/chest").status_code == 403
+    finish_perfect_lesson(client, 1)
+    assert chest(client)["status"] == "locked"  # one skill is still open
+    finish_perfect_lesson(client, 2)
+    assert chest(client) == {"status": "ready", "gems": 30}
+    assert chest(client, 1)["status"] == "locked"  # the next unit's chest is independent
+
+
+def test_opening_the_chest_pays_gems_once(client: APIClient) -> None:
+    finish_perfect_lesson(client, 1)
+    finish_perfect_lesson(client, 2)
+    before = me(client)["gems"]
+    result = client.post(f"/api/v1/units/{unit_id(client)}/chest").json()
+    assert result == {"gems_awarded": 30, "gems": before + 30}
+    assert chest(client)["status"] == "opened" and me(client)["gems"] == before + 30
+    assert client.post(f"/api/v1/units/{unit_id(client)}/chest").status_code == 403  # already opened
+    assert me(client)["gems"] == before + 30
+    assert client.post("/api/v1/units/999/chest").status_code == 404
+
+
+def test_reset_closes_the_chest_again(client: APIClient) -> None:
+    finish_perfect_lesson(client, 1)
+    finish_perfect_lesson(client, 2)
+    client.post(f"/api/v1/units/{unit_id(client)}/chest")
+    client.post("/api/v1/dev/reset")
+    assert chest(client)["status"] == "locked" and me(client)["gems"] == 480
+
+
+# ------------------------------------------------------- learner timezone
+def test_me_reports_the_learners_calendar_day_and_last_active_day(client: APIClient, clock: Clock) -> None:
+    clock.value = clock.value.replace(hour=12, minute=0)
+    user = me(client)
+    assert user["today"] == clock.value.date().isoformat() and user["tz_offset_minutes"] == 0
+    assert user["last_active_date"] == (clock.value.date() - timedelta(days=1)).isoformat()  # seeded: active yesterday
+    finish_perfect_lesson(client, 1)
+    assert me(client)["last_active_date"] == clock.value.date().isoformat()
+
+
+def test_streak_days_follow_the_learners_timezone(client: APIClient, clock: Clock) -> None:
+    from datetime import datetime as dt
+
+    base = clock.value.date()
+    clock.value = dt.combine(base, dt.min.time()).replace(hour=20)  # 20:00 UTC
+    assert client.patch("/api/v1/me/settings", json={"tz_offset_minutes": 330}).json()["today"] == (base + timedelta(days=1)).isoformat()  # already tomorrow in India
+    result = finish_perfect_lesson(client, 1)
+    assert result["streak"] == 1  # the seeded streak ended two local days ago
+    assert me(client)["last_active_date"] == (base + timedelta(days=1)).isoformat()
+    assert client.patch("/api/v1/me/settings", json={"tz_offset_minutes": 0}).json()["today"] == base.isoformat()
+    client.post("/api/v1/dev/reset")
+    assert finish_perfect_lesson(client, 1)["streak"] == 8  # same instant, a UTC learner keeps the streak
+
+
+@pytest.mark.parametrize("offset", [841, -841, "later"])
+def test_invalid_timezone_offsets_are_rejected(client: APIClient, offset) -> None:
+    assert client.patch("/api/v1/me/settings", json={"tz_offset_minutes": offset}).status_code == 422
