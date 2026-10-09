@@ -88,7 +88,7 @@ def test_existing_sample_data_is_reconciled_without_resetting_stats(tmp_path) ->
         seed_database(db)
         seed_database(db)
         assert db.scalar(select(func.count()).select_from(LessonAttempt)) == 1
-        assert db.scalar(select(func.count()).select_from(UserAchievement)) == 3
+        assert db.scalar(select(func.count()).select_from(UserAchievement)) == 4
         assert db.scalar(select(User.total_xp).where(User.username == "learner")) == original_xp
     engine.dispose()
 
@@ -282,3 +282,277 @@ def test_displayed_streak_expires_after_a_missed_day() -> None:
     assert user.current_streak == 7
     update_streak(user, today)
     assert effective_streak(user, today) == 1
+
+
+# --------------------------------------------------------------- hardening
+FIRST_LESSON_ANSWERS = ["My name is Ana", ["Vivo", "en", "Delhi"], [["nombre", "name"], ["vivo", "I live"], ["mucho gusto", "nice to meet you"]], "llamo", "mucho gusto"]
+
+
+def start(client: APIClient, skill_index: int = 1, mode: str = "lesson") -> dict:
+    path = client.get("/api/v1/courses/1/path").json()
+    lesson_id = path["units"][0]["skills"][skill_index]["lesson_id"]
+    return client.post(f"/api/v1/lessons/{lesson_id}/attempts", json={"mode": mode}).json()
+
+
+def answer(client: APIClient, attempt: dict, index: int, value) -> httpx.Response:
+    return client.post(f"/api/v1/attempts/{attempt['attempt_id']}/answers", json={"exercise_id": attempt["exercises"][index]["id"], "answer": value})
+
+
+def finish_perfect_lesson(client: APIClient) -> dict:
+    attempt = start(client)
+    for index, value in enumerate(FIRST_LESSON_ANSWERS):
+        assert answer(client, attempt, index, value).json()["correct"] is True
+    return client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete").json()
+
+
+class Clock:
+    def __init__(self, value: datetime) -> None:
+        self.value = value
+
+    def __call__(self) -> datetime:
+        return self.value
+
+
+@pytest.fixture()
+def clock(monkeypatch) -> Clock:
+    import app.seed as seed_module
+    import app.service as service_module
+
+    from app.models import utc_now
+
+    fake = Clock(utc_now())
+    monkeypatch.setattr(service_module, "current_time", fake)
+    monkeypatch.setattr(seed_module, "current_time", fake)
+    return fake
+
+
+def test_second_mistake_does_not_restart_the_heart_timer() -> None:
+    from app.service import lose_heart
+
+    now = datetime(2026, 10, 9, 12, 0)
+    user = User(username="t", display_name="T", hearts=5, max_hearts=5, hearts_updated_at=now - timedelta(days=3))
+    assert lose_heart(user, now) and user.hearts == 4
+    assert lose_heart(user, now + timedelta(minutes=20)) and user.hearts == 3
+    regenerate_hearts(user, now + timedelta(minutes=31))
+    assert user.hearts == 4  # first heart returns 30 minutes after the first mistake, not the second
+    assert user.hearts_updated_at == now + timedelta(minutes=30)
+
+
+def test_lose_heart_never_goes_below_zero() -> None:
+    from app.service import lose_heart
+
+    now = datetime(2026, 10, 9, 12, 0)
+    user = User(username="t", display_name="T", hearts=0, max_hearts=5, hearts_updated_at=now)
+    assert lose_heart(user, now) is False
+    assert user.hearts == 0
+
+
+def test_refill_rules_and_gem_ledger(client: APIClient) -> None:
+    assert client.post("/api/v1/hearts/practice-refill").json()["hearts"] == 5
+    assert client.post("/api/v1/hearts/practice-refill").status_code == 409
+    assert client.post("/api/v1/hearts/gem-refill").status_code == 409
+    attempt = start(client)
+    answer(client, attempt, 0, "wrong")
+    refill = client.post("/api/v1/hearts/gem-refill").json()
+    assert refill["hearts"] == 5
+    assert refill["gems"] == 480 - 350
+    answer(client, attempt, 1, "wrong")
+    assert client.post("/api/v1/hearts/gem-refill").status_code == 409  # only 130 gems left
+
+
+def test_practice_never_costs_hearts_and_rewards_one(client: APIClient) -> None:
+    attempt = start(client, mode="practice")
+    assert answer(client, attempt, 0, "wrong").json()["hearts"] == 4
+    for index, value in list(enumerate(FIRST_LESSON_ANSWERS))[1:]:
+        answer(client, attempt, index, value)
+    result = client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete").json()
+    assert result["hearts"] == 5
+    path = client.get("/api/v1/courses/1/path").json()
+    assert path["units"][0]["skills"][1]["status"] == "available"  # practice does not complete a skill
+
+
+def test_practice_is_allowed_with_zero_hearts(client: APIClient) -> None:
+    attempt = start(client)
+    for index in range(4):
+        answer(client, attempt, index, "wrong")
+    assert client.post(f"/api/v1/lessons/{attempt['lesson']['id']}/attempts", json={"mode": "lesson"}).status_code == 409
+    assert client.post(f"/api/v1/lessons/{attempt['lesson']['id']}/attempts", json={"mode": "practice"}).status_code == 200
+
+
+def test_legendary_requires_completed_skill_and_is_server_timed(client: APIClient, clock: Clock) -> None:
+    path = client.get("/api/v1/courses/1/path").json()
+    open_lesson = path["units"][0]["skills"][1]["lesson_id"]
+    assert client.post(f"/api/v1/lessons/{open_lesson}/attempts", json={"mode": "legendary"}).status_code == 403
+    done_lesson = path["units"][0]["skills"][0]["lesson_id"]
+    attempt = client.post(f"/api/v1/lessons/{done_lesson}/attempts", json={"mode": "legendary"}).json()
+    assert attempt["seconds_left"] == 75
+    clock.value += timedelta(seconds=40)
+    resumed = client.post(f"/api/v1/lessons/{done_lesson}/attempts", json={"mode": "legendary"}).json()
+    assert resumed["attempt_id"] == attempt["attempt_id"] and resumed["seconds_left"] == 35
+    clock.value += timedelta(seconds=60)
+    late = answer(client, attempt, 0, "hello")
+    assert late.status_code == 409 and late.json()["detail"] == "Time is up"
+    assert client.get(f"/api/v1/attempts/{attempt['attempt_id']}").json()["status"] == "abandoned"
+    fresh = client.post(f"/api/v1/lessons/{done_lesson}/attempts", json={"mode": "legendary"}).json()
+    assert fresh["attempt_id"] != attempt["attempt_id"] and fresh["seconds_left"] == 75
+
+
+def test_answer_validation_and_ordering(client: APIClient) -> None:
+    attempt = start(client)
+    base = f"/api/v1/attempts/{attempt['attempt_id']}/answers"
+    assert client.post(base, json={"exercise_id": attempt["exercises"][0]["id"], "answer": {"a": 1}}).status_code == 422
+    assert client.post(base, json={"exercise_id": attempt["exercises"][0]["id"], "answer": "x" * 400}).status_code == 422
+    assert client.post(base, json={"exercise_id": attempt["exercises"][0]["id"], "answer": ["a"] * 100}).status_code == 422
+    assert client.post(base, json={"exercise_id": attempt["exercises"][3]["id"], "answer": "llamo"}).status_code == 409
+    assert answer(client, attempt, 0, "My name is Ana").status_code == 200
+    assert answer(client, attempt, 0, "My name is Ana").status_code == 409
+    assert client.post(base, json={"exercise_id": 99999, "answer": "x"}).status_code == 409
+    assert client.post("/api/v1/attempts/99999/answers", json={"exercise_id": 1, "answer": "x"}).status_code == 404
+    assert client.get("/api/v1/attempts/99999").status_code == 404
+    assert client.post("/api/v1/lessons/99999/attempts", json={"mode": "lesson"}).status_code == 404
+    assert client.post("/api/v1/lessons/1/attempts", json={"mode": "cheat"}).status_code == 422
+
+
+def test_typed_answers_ignore_case_punctuation_and_accents(client: APIClient) -> None:
+    attempt = start(client)
+    for index in range(4):
+        answer(client, attempt, index, FIRST_LESSON_ANSWERS[index])
+    assert answer(client, attempt, 4, "  Mucho   GUSTO! ").json()["correct"] is True
+
+
+def test_attempt_state_machine_blocks_invalid_transitions(client: APIClient) -> None:
+    attempt = start(client)
+    base = f"/api/v1/attempts/{attempt['attempt_id']}"
+    assert client.post(f"{base}/complete").status_code == 409  # nothing answered yet
+    assert client.post(f"{base}/abandon").json()["status"] == "abandoned"
+    assert client.post(f"{base}/abandon").json()["status"] == "abandoned"
+    assert answer(client, attempt, 0, "My name is Ana").status_code == 409
+    assert client.post(f"{base}/complete").status_code == 409
+    done = finish_perfect_lesson(client)
+    assert client.post(f"/api/v1/attempts/{done['attempt_id']}/abandon").json()["status"] == "completed"
+
+
+def test_perfect_lesson_reports_goal_and_perfect_flag(client: APIClient) -> None:
+    result = finish_perfect_lesson(client)
+    assert result["perfect"] is True and result["accuracy"] == 100
+    assert result["xp_awarded"] == 20
+    assert result["daily_goal_reached"] is True and result["today_xp"] == 35
+    assert result["new_achievements"] == []  # Flawless was already earned by the seeded first lesson
+    assert result["hearts"] == 4
+
+
+def test_failed_attempt_gives_no_rewards_and_cannot_resume(client: APIClient) -> None:
+    attempt = start(client)
+    for index in range(4):
+        last = answer(client, attempt, index, "wrong").json()
+    assert last["failed"] is True
+    assert answer(client, attempt, 4, "mucho gusto").status_code == 409
+    state = client.get(f"/api/v1/attempts/{attempt['attempt_id']}").json()
+    assert state["status"] == "failed"
+    assert client.get("/api/v1/me").json()["total_xp"] == 185
+
+
+def test_league_is_weekly_and_resets_with_the_calendar(client: APIClient, clock: Clock) -> None:
+    board = client.get("/api/v1/leaderboards/weekly").json()
+    assert [entry["name"] for entry in board["entries"]][:2] == ["Maya", "Leo"]
+    assert {entry["zone"] for entry in board["entries"]} == {"promotion", "safe", "demotion"}
+    assert board["entries"][0]["zone"] == "promotion" and board["entries"][-1]["zone"] == "demotion"
+    clock.value = clock.value + timedelta(days=8)
+    next_week = client.get("/api/v1/leaderboards/weekly").json()
+    assert all(entry["xp"] == 0 for entry in next_week["entries"])
+    assert next_week["ends_in"].endswith("h")
+
+
+def test_week_start_is_monday_midnight() -> None:
+    from app.service import week_start
+
+    assert week_start(datetime(2026, 10, 9, 15, 30)) == datetime(2026, 10, 5)
+    assert week_start(datetime(2026, 10, 5, 0, 0)) == datetime(2026, 10, 5)
+    assert week_start(datetime(2026, 10, 11, 23, 59)) == datetime(2026, 10, 5)
+
+
+def test_streak_lapses_after_simulated_days_and_restarts(client: APIClient) -> None:
+    assert client.get("/api/v1/me").json()["current_streak"] == 7
+    assert client.post("/api/v1/dev/simulate-day").status_code == 200
+    me = client.get("/api/v1/me").json()
+    assert me["current_streak"] == 0 and me["today_xp"] == 0
+    assert finish_perfect_lesson(client)["streak"] == 1
+    assert client.get("/api/v1/me").json()["longest_streak"] == 12
+
+
+def test_dev_reset_restores_seeded_learner(client: APIClient) -> None:
+    finish_perfect_lesson(client)
+    client.post("/api/v1/hearts/gem-refill")
+    assert client.post("/api/v1/dev/reset").status_code == 200
+    me = client.get("/api/v1/me").json()
+    assert (me["total_xp"], me["hearts"], me["gems"], me["current_streak"], me["today_xp"]) == (185, 4, 480, 7, 15)
+    path = client.get("/api/v1/courses/1/path").json()
+    assert [skill["status"] for skill in path["units"][0]["skills"]] == ["completed", "available", "locked"]
+    assert sum(1 for item in client.get("/api/v1/achievements").json() if item["earned"]) == 4
+    assert client.post("/api/v1/dev/reset").status_code == 200  # repeatable
+
+
+def test_dev_endpoints_can_be_disabled(client: APIClient, monkeypatch) -> None:
+    monkeypatch.setenv("ENABLE_DEV_ENDPOINTS", "0")
+    assert client.post("/api/v1/dev/reset").status_code == 404
+    assert client.post("/api/v1/dev/simulate-day").status_code == 404
+
+
+def test_quests_activity_and_profile_reflect_progress(client: APIClient) -> None:
+    quests = {quest["id"]: quest for quest in client.get("/api/v1/quests").json()["quests"]}
+    assert quests["daily-xp"]["progress"] == 15 and not quests["daily-xp"]["completed"]
+    assert not quests["daily-lesson"]["completed"]
+    finish_perfect_lesson(client)
+    quests = {quest["id"]: quest for quest in client.get("/api/v1/quests").json()["quests"]}
+    assert all(quest["completed"] for quest in quests.values())
+    days = client.get("/api/v1/me/activity?days=7").json()
+    assert len(days["days"]) == 7 and days["days"][-1]["xp"] == 35 and days["days"][-1]["goal_met"]
+    assert client.get("/api/v1/me/activity?days=0").status_code == 422
+    profile = client.get("/api/v1/me/profile").json()
+    assert profile["completed_skills"] == 2 and profile["lessons_completed"] == 2
+
+
+def test_bootstrap_exposes_practice_lesson_and_hides_answers(client: APIClient) -> None:
+    payload = client.get("/api/v1/bootstrap").json()
+    assert payload["practice_lesson_id"] == payload["units"][0]["skills"][0]["lesson_id"]
+    attempt = start(client)
+    leaked = {"answer", "accepted", "pairs", "value", "correct"}  # word-bank "tokens" are the shuffled bank, not the answer
+    for exercise in attempt["exercises"]:
+        assert not leaked & set(exercise)
+        assert not leaked & set(exercise["payload"])
+    assert client.get("/api/v1/courses/2/path").status_code == 404
+
+
+def test_match_pair_order_is_stable_across_refresh(client: APIClient) -> None:
+    attempt = start(client)
+    again = client.get(f"/api/v1/attempts/{attempt['attempt_id']}").json()
+    assert attempt["exercises"][2]["payload"] == again["exercises"][2]["payload"]
+
+
+def test_ensure_schema_adds_missing_columns_to_an_old_database(tmp_path) -> None:
+    from app.database import ensure_schema
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with engine.begin() as connection:
+        connection.exec_driver_sql("CREATE TABLE lesson_attempts (id INTEGER PRIMARY KEY, user_id INTEGER, lesson_id INTEGER, mode VARCHAR(20), status VARCHAR(20), current_index INTEGER, correct_count INTEGER, hearts_lost INTEGER, xp_awarded INTEGER, started_at DATETIME, completed_at DATETIME)")
+    ensure_schema(engine)
+    ensure_schema(engine)
+    with engine.connect() as connection:
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(lesson_attempts)")}
+        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "expires_at" in columns and "heart_events" in tables
+    engine.dispose()
+
+
+def test_option_and_token_order_does_not_reveal_the_answer(client: APIClient) -> None:
+    attempt = start(client)
+    again = client.get(f"/api/v1/attempts/{attempt['attempt_id']}").json()
+    assert attempt["exercises"] == again["exercises"]  # stable on refresh
+    positions = set()
+    for _ in range(8):  # different attempts reorder differently
+        fresh = start(client)
+        client.post(f"/api/v1/attempts/{fresh['attempt_id']}/abandon")
+        options = fresh["exercises"][0]["payload"]["options"]
+        assert sorted(options) == sorted(["My name is Ana", "I know Ana", "Ana is here", "Goodbye Ana"])
+        positions.add(options.index("My name is Ana"))
+    assert len(positions) > 1

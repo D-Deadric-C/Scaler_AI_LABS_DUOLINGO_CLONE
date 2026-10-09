@@ -74,15 +74,18 @@ export function ProfilePage() {
 }
 
 export function PracticePage() {
+  const [practiceLesson, setPracticeLesson] = useState(2);
+  useEffect(() => { api.bootstrap().then((value) => { if (value.practice_lesson_id) setPracticeLesson(value.practice_lesson_id); }).catch(() => undefined); }, []);
+  const practiceHref = `/lesson/${practiceLesson}?mode=practice`;
   return <SupportLayout><div className="reference-practice-hub">
     <h1>Today&apos;s Review</h1>
     <section className="reference-unit-rewind"><Image src="/learn-assets/super.svg" width={78} height={23} alt="Super" /><h2>Unit Rewind</h2><p>Keep your memory fresh with this review of Unit 1!</p><Link href="/shop">UNLOCK</Link><Image className="reference-rewind-art" src="/duolingo-assets/071159d03311fcb556c4dfe730941de1.svg" width={170} height={170} alt="" aria-hidden /></section>
     <h2 className="reference-practice-section-title">Conversation</h2>
-    <Link className="reference-practice-tile" href="/lesson/2?mode=practice"><div><strong>Listen</strong><Image src="/learn-assets/super.svg" width={76} height={22} alt="Super" /></div><p>Boost your listening skills with an audio-only session</p><span className="reference-practice-tile-art" aria-hidden>🎧</span></Link>
+    <Link className="reference-practice-tile" href={practiceHref}><div><strong>Listen</strong><Image src="/learn-assets/super.svg" width={76} height={22} alt="Super" /></div><p>Boost your listening skills with an audio-only session</p><span className="reference-practice-tile-art" aria-hidden>🎧</span></Link>
     <h2 className="reference-practice-section-title">Your collections</h2>
-    <Link className="reference-practice-tile" href="/lesson/2?mode=practice"><div><strong>Mistakes</strong><Image src="/learn-assets/super.svg" width={76} height={22} alt="Super" /></div><p>Start a personalized lesson to practice your mistakes</p><span className="reference-practice-tile-art" aria-hidden>✦</span></Link>
-    <Link className="reference-practice-tile" href="/lesson/2?mode=practice"><div><strong>Stories</strong></div><p>Reread a story to review words in context</p><Image className="reference-practice-tile-art image" src="/learn-assets/openbook_white.svg" width={85} height={75} alt="" aria-hidden /></Link>
-    <Link className="reference-practice-free" href="/lesson/2?mode=practice">Practice to earn hearts</Link>
+    <Link className="reference-practice-tile" href={practiceHref}><div><strong>Mistakes</strong><Image src="/learn-assets/super.svg" width={76} height={22} alt="Super" /></div><p>Start a personalized lesson to practice your mistakes</p><span className="reference-practice-tile-art" aria-hidden>✦</span></Link>
+    <Link className="reference-practice-tile" href={practiceHref}><div><strong>Stories</strong></div><p>Reread a story to review words in context</p><Image className="reference-practice-tile-art image" src="/learn-assets/openbook_white.svg" width={85} height={75} alt="" aria-hidden /></Link>
+    <Link className="reference-practice-free" href={practiceHref}>Practice to earn hearts</Link>
   </div></SupportLayout>;
 }
 

@@ -1,6 +1,6 @@
-from datetime import date, timedelta
+from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from .models import (
@@ -9,15 +9,18 @@ from .models import (
     DailyActivity,
     Exercise,
     ExerciseAttempt,
+    HeartEvent,
     Lesson,
     LessonAttempt,
     Skill,
     SkillProgress,
     Unit,
     User,
+    UserAchievement,
+    XPEvent,
     utc_now,
 )
-from .service import evaluate_achievements
+from .service import current_time, evaluate_achievements, week_start
 
 
 SKILLS = [
@@ -46,6 +49,88 @@ EXERCISE_SETS = [
         ("type_answer", "Type in Spanish: nice to meet you", {"placeholder": "Type in Spanish"}, {"accepted": ["mucho gusto"]}, "‘Nice to meet you’ is ‘mucho gusto’."),
     ],
 ]
+
+
+LEARNER_USERNAME = "learner"
+WEEKLY_SEED_XP = {"learner": 95, "maya": 260, "leo": 210, "sam": 170, "nora": 125, "ari": 80}
+LEARNER_BASELINE = {
+    "total_xp": 185, "gems": 480, "hearts": 4, "max_hearts": 5, "current_streak": 7, "longest_streak": 12,
+    "daily_goal": 20, "dark_mode": False,
+}
+ACHIEVEMENTS = [
+    ("first-step", "First Steps", "Complete your first lesson", "shoe", 1, "lessons"),
+    ("xp-100", "XP Explorer", "Earn 100 total XP", "bolt", 100, "xp"),
+    ("streak-7", "Wildfire", "Reach a 7 day streak", "flame", 7, "streak"),
+    ("scholar", "Scholar", "Complete 5 lessons", "book", 5, "lessons"),
+    ("flawless", "Flawless", "Finish a lesson without a single mistake", "star", 1, "perfect"),
+    ("streak-14", "Unstoppable", "Reach a 14 day streak", "flame", 14, "streak"),
+]
+
+
+def ensure_achievements(db: Session) -> None:
+    known = set(db.scalars(select(Achievement.slug)).all())
+    for slug, title, description, icon, threshold, metric in ACHIEVEMENTS:
+        if slug not in known:
+            db.add(Achievement(slug=slug, title=title, description=description, icon=icon, threshold=threshold, metric=metric))
+    db.flush()
+
+
+def ensure_weekly_seed_events(db: Session) -> None:
+    """Seed this week's league XP as ledger events so the board resets with the calendar week."""
+    now = current_time()
+    monday = week_start(now)
+    for user in db.scalars(select(User)).all():
+        amount = WEEKLY_SEED_XP.get(user.username)
+        key = f"seed:weekly:{user.id}:{monday:%Y%m%d}"
+        if amount and not db.scalar(select(XPEvent.id).where(XPEvent.idempotency_key == key)):
+            db.add(XPEvent(user_id=user.id, amount=amount, source="seed", idempotency_key=key, created_at=monday))
+    db.flush()
+
+
+def reset_learner(db: Session) -> None:
+    """Restore the sample learner to the seeded starting state (other learners are untouched)."""
+    user = db.scalar(select(User).where(User.username == LEARNER_USERNAME))
+    first_skill = db.scalar(select(Skill).join(Unit).order_by(Unit.position, Skill.position).limit(1))
+    if user is None or first_skill is None:
+        raise LookupError("Seed data is missing")
+    attempt_ids = select(LessonAttempt.id).where(LessonAttempt.user_id == user.id)
+    db.execute(delete(HeartEvent).where(HeartEvent.user_id == user.id))
+    db.execute(delete(ExerciseAttempt).where(ExerciseAttempt.attempt_id.in_(attempt_ids)))
+    for model in (LessonAttempt, XPEvent, SkillProgress, DailyActivity, UserAchievement):
+        db.execute(delete(model).where(model.user_id == user.id))
+    now = current_time()
+    for field, value in LEARNER_BASELINE.items():
+        setattr(user, field, value)
+    user.hearts_updated_at = now
+    user.last_active_date = now.date() - timedelta(days=1)
+    db.add(SkillProgress(user_id=user.id, skill_id=first_skill.id, completed_lessons=1, crowns=1))
+    lesson = db.scalar(select(Lesson).where(Lesson.skill_id == first_skill.id).order_by(Lesson.position).limit(1))
+    seed_sample_completion(db, user, lesson)
+    db.add(DailyActivity(user_id=user.id, activity_date=now.date(), xp_earned=15, lessons_completed=0))
+    ensure_weekly_seed_events(db)
+    evaluate_achievements(db, user, now.date())
+    db.commit()
+
+
+def simulate_next_day(db: Session) -> None:
+    """Shift the learner's history one day into the past, as if a day had elapsed (streak/goal/heart demo)."""
+    user = db.scalar(select(User).where(User.username == LEARNER_USERNAME))
+    if user is None:
+        raise LookupError("Seed data is missing")
+    day = timedelta(days=1)
+    for row in db.scalars(select(DailyActivity).where(DailyActivity.user_id == user.id).order_by(DailyActivity.activity_date)).all():
+        row.activity_date -= day  # oldest first so the unique (user, date) constraint is never violated
+        db.flush()
+    for event in db.scalars(select(XPEvent).where(XPEvent.user_id == user.id)).all():
+        event.created_at -= day
+    for attempt in db.scalars(select(LessonAttempt).where(LessonAttempt.user_id == user.id)).all():
+        attempt.started_at -= day
+        if attempt.completed_at:
+            attempt.completed_at -= day
+    if user.last_active_date:
+        user.last_active_date -= day
+    user.hearts_updated_at -= day
+    db.commit()
 
 
 def seed_sample_completion(db: Session, user: User, lesson: Lesson) -> None:
@@ -80,6 +165,7 @@ def seed_sample_completion(db: Session, user: User, lesson: Lesson) -> None:
 
 def seed_database(db: Session) -> None:
     if db.scalar(select(Course.id).limit(1)) is not None:
+        ensure_achievements(db)
         user = db.scalar(select(User).where(User.username == "learner"))
         first_skill = db.scalar(select(Skill).join(Unit).order_by(Unit.position, Skill.position).limit(1))
         if user and first_skill and db.scalar(select(SkillProgress.id).where(
@@ -91,7 +177,8 @@ def seed_database(db: Session) -> None:
             if lesson:
                 seed_sample_completion(db, user, lesson)
             evaluate_achievements(db, user)
-            db.commit()
+        ensure_weekly_seed_events(db)
+        db.commit()
         return
 
     course = Course(slug="spanish-for-english", title="Spanish", target_language="Spanish", flag="ES")
@@ -124,26 +211,21 @@ def seed_database(db: Session) -> None:
             db.add(exercise)
 
     users = [
-        User(username="learner", display_name="Alex", avatar_color="#1cb0f6", total_xp=185, weekly_xp=95, gems=480, hearts=4, current_streak=7, longest_streak=12, last_active_date=date.today() - timedelta(days=1), daily_goal=20),
-        User(username="maya", display_name="Maya", avatar_color="#ce82ff", total_xp=940, weekly_xp=260, current_streak=18),
-        User(username="leo", display_name="Leo", avatar_color="#ff9600", total_xp=810, weekly_xp=210, current_streak=11),
-        User(username="sam", display_name="Sam", avatar_color="#ff4b4b", total_xp=720, weekly_xp=170, current_streak=9),
-        User(username="nora", display_name="Nora", avatar_color="#58cc02", total_xp=640, weekly_xp=125, current_streak=6),
-        User(username="ari", display_name="Ari", avatar_color="#2b70c9", total_xp=510, weekly_xp=80, current_streak=4),
+        User(username="learner", display_name="Alex", avatar_color="#1cb0f6", total_xp=185, gems=480, hearts=4, current_streak=7, longest_streak=12, last_active_date=current_time().date() - timedelta(days=1), daily_goal=20),
+        User(username="maya", display_name="Maya", avatar_color="#ce82ff", total_xp=940, current_streak=18),
+        User(username="leo", display_name="Leo", avatar_color="#ff9600", total_xp=810, current_streak=11),
+        User(username="sam", display_name="Sam", avatar_color="#ff4b4b", total_xp=720, current_streak=9),
+        User(username="nora", display_name="Nora", avatar_color="#58cc02", total_xp=640, current_streak=6),
+        User(username="ari", display_name="Ari", avatar_color="#2b70c9", total_xp=510, current_streak=4),
     ]
     db.add_all(users)
     db.flush()
 
     db.add(SkillProgress(user_id=users[0].id, skill_id=all_skills[0].id, completed_lessons=1, crowns=1))
     seed_sample_completion(db, users[0], first_lesson)
-    db.add(DailyActivity(user_id=users[0].id, activity_date=date.today(), xp_earned=15, lessons_completed=0))
-    achievements = [
-        Achievement(slug="first-step", title="First Steps", description="Complete your first lesson", icon="shoe", threshold=1, metric="lessons"),
-        Achievement(slug="xp-100", title="XP Explorer", description="Earn 100 total XP", icon="bolt", threshold=100, metric="xp"),
-        Achievement(slug="streak-7", title="Wildfire", description="Reach a 7 day streak", icon="flame", threshold=7, metric="streak"),
-        Achievement(slug="scholar", title="Scholar", description="Complete 5 lessons", icon="book", threshold=5, metric="lessons"),
-    ]
-    db.add_all(achievements)
+    db.add(DailyActivity(user_id=users[0].id, activity_date=current_time().date(), xp_earned=15, lessons_completed=0))
+    ensure_achievements(db)
+    ensure_weekly_seed_events(db)
     db.flush()
     evaluate_achievements(db, users[0])
     db.commit()

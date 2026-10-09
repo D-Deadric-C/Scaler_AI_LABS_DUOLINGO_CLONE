@@ -90,7 +90,6 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(80))
     avatar_color: Mapped[str] = mapped_column(String(20), default="#1cb0f6")
     total_xp: Mapped[int] = mapped_column(Integer, default=0)
-    weekly_xp: Mapped[int] = mapped_column(Integer, default=0)
     gems: Mapped[int] = mapped_column(Integer, default=500)
     hearts: Mapped[int] = mapped_column(Integer, default=5)
     max_hearts: Mapped[int] = mapped_column(Integer, default=5)
@@ -128,6 +127,7 @@ class LessonAttempt(Base):
     xp_awarded: Mapped[int] = mapped_column(Integer, default=0)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ExerciseAttempt(Base):
@@ -183,4 +183,19 @@ class XPEvent(Base):
     amount: Mapped[int] = mapped_column(Integer)
     source: Mapped[str] = mapped_column(String(40))
     idempotency_key: Mapped[str] = mapped_column(String(100), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, index=True)
+
+
+class HeartEvent(Base):
+    """Ledger of deliberate heart changes (mistakes, refills, practice rewards); passive regeneration is derived."""
+
+    __tablename__ = "heart_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    attempt_id: Mapped[int | None] = mapped_column(ForeignKey("lesson_attempts.id", ondelete="SET NULL"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(30))
+    delta: Mapped[int] = mapped_column(Integer)
+    hearts_after: Mapped[int] = mapped_column(Integer)
+    gems_spent: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, index=True)

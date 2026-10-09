@@ -45,6 +45,7 @@ export type LeaderboardEntry = {
   xp: number;
   avatar_color: string;
   is_current: boolean;
+  zone?: "promotion" | "safe" | "demotion";
 };
 
 export type Achievement = {
@@ -63,6 +64,7 @@ export type Bootstrap = {
   units: PathUnit[];
   leaderboard: LeaderboardEntry[];
   achievements: Achievement[];
+  practice_lesson_id: number | null;
 };
 
 export type Exercise = {
@@ -76,9 +78,11 @@ export type Exercise = {
 export type LessonAttempt = {
   attempt_id: number;
   lesson: { id: number; title: string; xp_reward: number };
+  mode?: string;
   status: string;
   current_index: number;
   hearts: number;
+  seconds_left?: number | null;
   exercises: Exercise[];
 };
 

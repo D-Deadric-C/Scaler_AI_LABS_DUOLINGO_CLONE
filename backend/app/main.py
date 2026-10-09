@@ -1,32 +1,43 @@
 from contextlib import asynccontextmanager
 import os
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .database import Base, SessionLocal, engine, get_db
-from .models import LessonAttempt, User
-from .schemas import AnswerRequest, AttemptCreateRequest, SettingsRequest
-from .seed import seed_database
+from . import schemas
+from .database import SessionLocal, ensure_schema, get_db
+from .seed import reset_learner, seed_database, simulate_next_day
 from .service import (
-    DEFAULT_USER_ID,
+    abandon_attempt,
     achievements_payload,
+    activity_payload,
     answer_attempt,
     attempt_payload,
     complete_attempt,
+    gem_refill,
+    get_attempt,
     get_user,
+    hearts_payload,
     leaderboard_payload,
     path_payload,
+    practice_refill,
+    profile_payload,
+    quests_payload,
     serialize_user,
     start_attempt,
 )
 
+API = "/api/v1"
+
+
+def dev_endpoints_enabled() -> bool:
+    return os.getenv("ENABLE_DEV_ENDPOINTS", "1").lower() not in {"0", "false", "no", "off"}
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    ensure_schema()
     with SessionLocal() as db:
         seed_database(db)
     yield
@@ -34,16 +45,15 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="Duolingo API",
-    version="1.0.0",
+    version="1.1.0",
+    description="Server-authoritative API for the Duolingo clone: path, lesson attempts, hearts, XP, streaks and leagues.",
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
     lifespan=lifespan,
 )
 CORS_ORIGINS = [
     origin.strip()
-    for origin in os.getenv(
-        "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
-    ).split(",")
+    for origin in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
     if origin.strip()
 ]
 app.add_middleware(
@@ -55,13 +65,14 @@ app.add_middleware(
 )
 
 
-@app.get("/api/v1/health")
-async def health() -> dict[str, str]:
+# ------------------------------------------------------------------ system
+@app.get(f"{API}/health", tags=["system"])
+def health() -> dict[str, str]:
     return {"status": "ok", "service": "duolingo-api"}
 
 
-@app.get("/api/v1/bootstrap")
-async def bootstrap(db: Session = Depends(get_db)) -> dict:
+@app.get(f"{API}/bootstrap", response_model=schemas.BootstrapOut, tags=["path"])
+def bootstrap(db: Session = Depends(get_db)) -> dict:
     payload = path_payload(db)
     payload["leaderboard"] = leaderboard_payload(db)["entries"][:3]
     payload["achievements"] = achievements_payload(db)[:3]
@@ -69,23 +80,26 @@ async def bootstrap(db: Session = Depends(get_db)) -> dict:
     return payload
 
 
-@app.get("/api/v1/courses/1/path")
-async def course_path(db: Session = Depends(get_db)) -> dict:
+@app.get(f"{API}/courses/{{course_id}}/path", response_model=schemas.PathOut, tags=["path"])
+def course_path(course_id: int, db: Session = Depends(get_db)) -> dict:
+    if course_id != 1:
+        raise HTTPException(404, "Course not found")
     payload = path_payload(db)
     db.commit()
     return payload
 
 
-@app.get("/api/v1/me")
-async def me(db: Session = Depends(get_db)) -> dict:
+# ----------------------------------------------------------------- learner
+@app.get(f"{API}/me", response_model=schemas.UserOut, tags=["learner"])
+def me(db: Session = Depends(get_db)) -> dict:
     user = get_user(db)
     payload = serialize_user(db, user)
     db.commit()
     return payload
 
 
-@app.patch("/api/v1/me/settings")
-async def update_settings(body: SettingsRequest, db: Session = Depends(get_db)) -> dict:
+@app.patch(f"{API}/me/settings", response_model=schemas.UserOut, tags=["learner"])
+def update_settings(body: schemas.SettingsRequest, db: Session = Depends(get_db)) -> dict:
     user = get_user(db)
     if body.dark_mode is not None:
         user.dark_mode = body.dark_mode
@@ -95,87 +109,90 @@ async def update_settings(body: SettingsRequest, db: Session = Depends(get_db)) 
     return serialize_user(db, user)
 
 
-@app.get("/api/v1/me/profile")
-async def profile(db: Session = Depends(get_db)) -> dict:
-    user = get_user(db)
-    return {"user": serialize_user(db, user), "achievements": achievements_payload(db), "league": leaderboard_payload(db)["league"]}
+@app.get(f"{API}/me/profile", response_model=schemas.ProfileOut, tags=["learner"])
+def profile(db: Session = Depends(get_db)) -> dict:
+    payload = profile_payload(db)
+    db.commit()
+    return payload
 
 
-@app.post("/api/v1/lessons/{lesson_id}/attempts")
-async def create_attempt(lesson_id: int, body: AttemptCreateRequest, db: Session = Depends(get_db)) -> dict:
-    return start_attempt(db, lesson_id, body.mode)
+@app.get(f"{API}/me/activity", response_model=schemas.ActivityOut, tags=["learner"])
+def activity(days: int = Query(default=14, ge=1, le=90), db: Session = Depends(get_db)) -> dict:
+    return activity_payload(db, days)
 
 
-@app.get("/api/v1/attempts/{attempt_id}")
-async def get_attempt(attempt_id: int, db: Session = Depends(get_db)) -> dict:
-    attempt = db.get(LessonAttempt, attempt_id)
-    if not attempt:
-        raise HTTPException(404, "Attempt not found")
-    return attempt_payload(db, attempt)
+# ---------------------------------------------------------- lesson attempts
+@app.post(f"{API}/lessons/{{lesson_id}}/attempts", response_model=schemas.AttemptOut, tags=["attempts"])
+def create_attempt(lesson_id: int, body: schemas.AttemptCreateRequest | None = None, db: Session = Depends(get_db)) -> dict:
+    return start_attempt(db, lesson_id, (body or schemas.AttemptCreateRequest()).mode)
 
 
-@app.post("/api/v1/attempts/{attempt_id}/answers")
-async def submit_answer(attempt_id: int, body: AnswerRequest, db: Session = Depends(get_db)) -> dict:
+@app.get(f"{API}/attempts/{{attempt_id}}", response_model=schemas.AttemptOut, tags=["attempts"])
+def read_attempt(attempt_id: int, db: Session = Depends(get_db)) -> dict:
+    return attempt_payload(db, get_attempt(db, attempt_id))
+
+
+@app.post(f"{API}/attempts/{{attempt_id}}/answers", response_model=schemas.AnswerOut, tags=["attempts"])
+def submit_answer(attempt_id: int, body: schemas.AnswerRequest, db: Session = Depends(get_db)) -> dict:
     return answer_attempt(db, attempt_id, body.exercise_id, body.answer)
 
 
-@app.post("/api/v1/attempts/{attempt_id}/complete")
-async def finish_attempt(attempt_id: int, db: Session = Depends(get_db)) -> dict:
+@app.post(f"{API}/attempts/{{attempt_id}}/complete", response_model=schemas.CompletionOut, tags=["attempts"])
+def finish_attempt(attempt_id: int, db: Session = Depends(get_db)) -> dict:
     return complete_attempt(db, attempt_id)
 
 
-@app.post("/api/v1/attempts/{attempt_id}/abandon")
-async def abandon_attempt(attempt_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
-    attempt = db.get(LessonAttempt, attempt_id)
-    if not attempt:
-        raise HTTPException(404, "Attempt not found")
-    if attempt.status == "active":
-        attempt.status = "abandoned"
-        db.commit()
-    return {"status": attempt.status}
+@app.post(f"{API}/attempts/{{attempt_id}}/abandon", response_model=schemas.StatusOut, tags=["attempts"])
+def leave_attempt(attempt_id: int, db: Session = Depends(get_db)) -> dict:
+    return abandon_attempt(db, attempt_id)
 
 
-@app.get("/api/v1/leaderboards/weekly")
-async def weekly_leaderboard(db: Session = Depends(get_db)) -> dict:
+# ------------------------------------------------------------- gamification
+@app.get(f"{API}/leaderboards/weekly", response_model=schemas.LeaderboardOut, tags=["gamification"])
+def weekly_leaderboard(db: Session = Depends(get_db)) -> dict:
     return leaderboard_payload(db)
 
 
-@app.get("/api/v1/achievements")
-async def achievements(db: Session = Depends(get_db)) -> list[dict]:
+@app.get(f"{API}/achievements", response_model=list[schemas.AchievementOut], tags=["gamification"])
+def achievements(db: Session = Depends(get_db)) -> list[dict]:
     return achievements_payload(db)
 
 
-@app.get("/api/v1/hearts")
-async def hearts(db: Session = Depends(get_db)) -> dict:
-    user = get_user(db)
-    db.commit()
-    return {"hearts": user.hearts, "max_hearts": user.max_hearts, "next_heart_at": serialize_user(db, user)["next_heart_at"]}
+@app.get(f"{API}/quests", response_model=schemas.QuestsOut, tags=["gamification"])
+def quests(db: Session = Depends(get_db)) -> dict:
+    return quests_payload(db)
 
 
-@app.post("/api/v1/hearts/practice-refill")
-async def practice_refill(db: Session = Depends(get_db)) -> dict:
-    user = get_user(db)
-    user.hearts = user.max_hearts
-    db.commit()
-    return {"hearts": user.hearts, "message": "Practice complete — hearts restored!"}
+@app.get(f"{API}/hearts", response_model=schemas.HeartsOut, tags=["gamification"])
+def hearts(db: Session = Depends(get_db)) -> dict:
+    return hearts_payload(db)
 
 
-@app.post("/api/v1/hearts/gem-refill")
-async def gem_refill(db: Session = Depends(get_db)) -> dict:
-    user = get_user(db)
-    cost = 350
-    if user.gems < cost:
-        raise HTTPException(409, "Not enough gems")
-    if user.hearts == user.max_hearts:
-        raise HTTPException(409, "Hearts are already full")
-    user.gems -= cost
-    user.hearts = user.max_hearts
-    db.commit()
-    return {"hearts": user.hearts, "gems": user.gems}
+@app.post(f"{API}/hearts/practice-refill", response_model=schemas.RefillOut, tags=["gamification"])
+def hearts_practice_refill(db: Session = Depends(get_db)) -> dict:
+    return practice_refill(db)
 
 
-@app.post("/api/v1/dev/reset")
-async def reset_demo(db: Session = Depends(get_db)) -> dict[str, str]:
-    if db.scalar(select(User.id).where(User.id == DEFAULT_USER_ID)) is None:
-        raise HTTPException(404, "Demo learner missing")
-    return {"status": "available", "message": "Delete backend/duolingo.db and restart to fully reseed."}
+@app.post(f"{API}/hearts/gem-refill", response_model=schemas.RefillOut, tags=["gamification"])
+def hearts_gem_refill(db: Session = Depends(get_db)) -> dict:
+    return gem_refill(db)
+
+
+# --------------------------------------------------------------------- dev
+def require_dev_endpoints() -> None:
+    if not dev_endpoints_enabled():
+        raise HTTPException(404, "Not found")
+
+
+@app.post(f"{API}/dev/reset", response_model=schemas.DevActionOut, tags=["dev"], dependencies=[Depends(require_dev_endpoints)])
+def reset_demo(db: Session = Depends(get_db)) -> dict:
+    """Restore the sample learner to the seeded starting state."""
+    reset_learner(db)
+    return {"status": "ok", "message": "Demo learner restored to the seeded starting state."}
+
+
+@app.post(f"{API}/dev/simulate-day", response_model=schemas.DevActionOut, tags=["dev"], dependencies=[Depends(require_dev_endpoints)])
+def simulate_day(db: Session = Depends(get_db)) -> dict:
+    """Pretend one day has passed (streak, daily goal and heart regeneration can then be observed)."""
+    simulate_next_day(db)
+    return {"status": "ok", "message": "One day has passed for the demo learner."}

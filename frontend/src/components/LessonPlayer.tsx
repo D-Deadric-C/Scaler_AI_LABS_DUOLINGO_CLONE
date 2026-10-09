@@ -80,7 +80,7 @@ export function LessonPlayer({ lessonId, mode = "lesson" }: { lessonId: number; 
   const [secondsLeft, setSecondsLeft] = useState(mode === "legendary" ? 75 : null);
   const [exitOpen, setExitOpen] = useState(false);
 
-  useEffect(() => { api.startAttempt(lessonId, mode).then((value) => { setAttempt(value); setHearts(value.hearts); }).catch((reason: Error) => setError(reason.message)); }, [lessonId, mode]);
+  useEffect(() => { api.startAttempt(lessonId, mode).then((value) => { setAttempt(value); setHearts(value.hearts); if (typeof value.seconds_left === "number") setSecondsLeft(value.seconds_left); }).catch((reason: Error) => setError(reason.message)); }, [lessonId, mode]);
   useEffect(() => {
     if (!attempt || attempt.status !== "active" || attempt.current_index < attempt.exercises.length) return;
     let cancelled = false;
@@ -155,7 +155,7 @@ export function LessonPlayer({ lessonId, mode = "lesson" }: { lessonId: number; 
   if (secondsLeft === 0) return <div className="completion-screen"><Mascot mood="sad" size={150}/><span className="eyebrow red">TIME’S UP</span><h1>Great effort!</h1><p>Try the legendary challenge again and answer all five before the timer ends.</p><button className="game-button wide" onClick={() => location.reload()}>TRY AGAIN</button><Link href="/practice" className="text-button">BACK TO PRACTICE</Link></div>;
   if (attempt && !exercise && error) return <div className="center-state lesson-state"><Mascot mood="sad"/><h1>Couldn’t finish your lesson</h1><p>{error}</p><button className="game-button" onClick={() => { setError(""); void api.complete(attempt.attempt_id).then(setResult).catch((reason: Error) => setError(reason.message)); }}>TRY AGAIN</button><Link href="/learn" className="text-button">BACK TO PATH</Link></div>;
   if (!attempt || !exercise) return <div className="center-state lesson-state"><Mascot/><div className="loading-dots"><i/><i/><i/></div><p>{attempt ? "Finishing your lesson…" : "Preparing your lesson…"}</p></div>;
-  if (feedback?.failed) return <div className="completion-screen"><Mascot mood="sad" size={150}/><span className="eyebrow red">OUT OF HEARTS</span><h1>Don’t give up!</h1><p>Practice to refill your hearts and come back stronger.</p><button className="game-button wide" onClick={async () => { await api.refill(); location.reload(); }}>PRACTICE + REFILL</button><Link href="/learn" className="text-button">RETURN TO PATH</Link></div>;
+  if (feedback?.failed) return <div className="completion-screen"><Mascot mood="sad" size={150}/><span className="eyebrow red">OUT OF HEARTS</span><h1>Don’t give up!</h1><p>Practice to refill your hearts and come back stronger.</p><button className="game-button wide" onClick={async () => { await api.refill().catch(() => undefined); location.reload(); }}>PRACTICE + REFILL</button><Link href="/learn" className="text-button">RETURN TO PATH</Link></div>;
   return (
     <div className="lesson-page reference-lesson-page">
       <header className="lesson-header"><button type="button" onClick={() => setExitOpen(true)} aria-label="Exit lesson" className="close-button">×</button><div className="lesson-progress" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${progress}%` }}/></div><div className="lesson-hearts">{secondsLeft === null ? <><Image src="/learn-assets/heart.svg" width={30} height={30} alt=""/><strong>{hearts}</strong></> : <><GameIcon name="clock" size={28}/><strong>{secondsLeft}s</strong></>}</div></header>
