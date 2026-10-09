@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { ToastProvider, useToast } from "./Toast";
 
 const learnNav = [
   ["/learn", "LEARN", "homeicon.svg"],
@@ -17,6 +18,7 @@ const learnNav = [
 ] as const;
 
 function ReferenceSidebar({ pathname }: { pathname: string }) {
+  const toast = useToast();
   return (
     <aside className="reference-side-nav">
       <Link href="/learn" className="reference-wordmark" aria-label="Duolingo home">
@@ -27,6 +29,14 @@ function ReferenceSidebar({ pathname }: { pathname: string }) {
         {learnNav.map(([href, label, asset]) => {
           const route = href.split("#")[0];
           const active = !href.includes("#") && pathname.startsWith(route);
+          if (href.includes("#")) { // sections that are not built yet
+            return (
+              <button key={label} type="button" className="reference-nav-item" onClick={() => toast.soon(label.charAt(0) + label.slice(1).toLowerCase())}>
+                <Image src={`/learn-assets/${asset}`} width={35} height={35} alt="" aria-hidden />
+                <span>{label}</span>
+              </button>
+            );
+          }
           return (
             <Link key={label} href={href} className={`reference-nav-item ${active ? "active" : ""}`}>
               {label === "PROFILE" ? (
@@ -43,7 +53,7 @@ function ReferenceSidebar({ pathname }: { pathname: string }) {
         <span className="chess-pieces" aria-hidden>♞♟</span>
         <strong>Want to learn chess?</strong>
         <p>Duolingo makes it easy!</p>
-        <Link href="/learn#chess">TRY CHESS</Link>
+        <button type="button" onClick={() => toast.soon("Chess")}>TRY CHESS</button>
       </div>
     </aside>
   );
@@ -64,11 +74,13 @@ function ReferenceMobileNav({ pathname }: { pathname: string }) {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   return (
-    <div className="app-shell duolingo-learn-shell">
-      <a className="reference-skip-link" href="#app-main">Skip to content</a>
-      <ReferenceSidebar pathname={pathname} />
-      <main id="app-main" className="shell-content">{children}</main>
-      <ReferenceMobileNav pathname={pathname} />
-    </div>
+    <ToastProvider>
+      <div className="app-shell duolingo-learn-shell">
+        <a className="reference-skip-link" href="#app-main">Skip to content</a>
+        <ReferenceSidebar pathname={pathname} />
+        <main id="app-main" className="shell-content">{children}</main>
+        <ReferenceMobileNav pathname={pathname} />
+      </div>
+    </ToastProvider>
   );
 }

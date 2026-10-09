@@ -80,9 +80,16 @@ export type LessonAttempt = {
   lesson: { id: number; title: string; xp_reward: number };
   mode?: string;
   status: string;
-  current_index: number;
+  /** Exercise ids still to answer, in order; wrong answers are re-queued at the end. */
+  queue: number[];
+  total_exercises: number;
+  correct_count: number;
   hearts: number;
   seconds_left?: number | null;
   exercises: Exercise[];
 };
 
+
+export type Quest = { id: string; title: string; progress: number; target: number; completed: boolean; reward_gems: number };
+export type ActivityDay = { date: string; xp: number; lessons: number; goal_met: boolean };
+export type Activity = { days: ActivityDay[]; current_streak: number; longest_streak: number };

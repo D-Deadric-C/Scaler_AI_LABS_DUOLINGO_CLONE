@@ -1,3 +1,5 @@
-import { ShopPage } from "@/components/SupportingPages";
-export default function Page() { return <ShopPage/>; }
+import { ShopPage } from "@/components/pages/ShopPage";
 
+export default function Page() {
+  return <ShopPage />;
+}

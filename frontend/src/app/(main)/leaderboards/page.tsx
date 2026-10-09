@@ -1,3 +1,5 @@
-import { LeaderboardPage } from "@/components/SupportingPages";
-export default function Page() { return <LeaderboardPage/>; }
+import { LeaderboardPage } from "@/components/pages/LeaderboardPage";
 
+export default function Page() {
+  return <LeaderboardPage />;
+}

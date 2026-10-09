@@ -1,3 +1,5 @@
-import { ProfilePage } from "@/components/SupportingPages";
-export default function Page() { return <ProfilePage/>; }
+import { ProfilePage } from "@/components/pages/ProfilePage";
 
+export default function Page() {
+  return <ProfilePage />;
+}

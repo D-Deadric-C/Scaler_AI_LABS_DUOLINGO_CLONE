@@ -1,4 +1,4 @@
-import { LessonPlayer } from "@/components/LessonPlayer";
+import { LessonPlayer } from "@/components/lesson/LessonPlayer";
 
 export default async function LessonPage({ params, searchParams }: { params: Promise<{ lessonId: string }>; searchParams: Promise<{ mode?: string }> }) {
   const { lessonId } = await params;
