@@ -8,7 +8,7 @@ import { TimezoneSync } from "@/components/TimezoneSync";
 const ui = Nunito({ subsets: ["latin"], weight: ["600", "700", "800", "900"], display: "swap", variable: "--font-ui" });
 
 export const metadata: Metadata = {
-  title: "duolingo_clone_by_Suryansh",
+  title: "duolingo_clone_by_suryansh",
   description: "A playful language learning experience with lessons, streaks, hearts and XP.",
 };
 
