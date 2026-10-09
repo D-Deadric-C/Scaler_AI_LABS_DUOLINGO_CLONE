@@ -12,11 +12,41 @@ import "../learn/learn.css";
 export type RailKind = "standard" | "quests" | "shop" | "league" | "profile" | "none";
 
 export function SupportFooter() {
-  return <div className="reference-support-footer">ABOUT　 BLOG　 STORE　 EFFICACY　 CAREERS<br />INVESTORS　 TERMS　 PRIVACY</div>;
+  return (
+    <div className="reference-support-footer">
+      <div>{["ABOUT", "BLOG", "STORE", "EFFICACY", "CAREERS"].map((item) => <span key={item}>{item}</span>)}</div>
+      <div>{["INVESTORS", "TERMS", "PRIVACY"].map((item) => <span key={item}>{item}</span>)}</div>
+    </div>
+  );
 }
 
+const STATUS_FACES = ["glasses", "party", "flex", "eyes", "popcorn", "flag", "angry", "hundred", "poop", "trophy", "fire", "cat"] as const;
+const STATUS_EMOJI: Record<string, string> = { party: "🎉", flex: "💪", eyes: "👀", popcorn: "🍿", flag: "🇺🇸", hundred: "💯", poop: "💩", trophy: "🏆", fire: "🔥", cat: "😾" };
+
 function LeagueRail({ data }: { data: Bootstrap }) {
-  return <aside className="reference-support-custom-rail"><StatsRow data={data} /><section className="reference-social-card"><h3>Set your status</h3><div className="reference-status-avatar">{data.user.display_name[0]}</div><div className="reference-status-icons">{["😎", "🎉", "💪", "👀", "🍿", "🇺🇸", "🦉", "💯", "🏆", "🥇"].map((icon, index) => <span key={`${icon}-${index}`}>{icon}</span>)}</div></section><SupportFooter /></aside>;
+  return (
+    <aside className="reference-support-custom-rail">
+      <StatsRow data={data} />
+      <section className="reference-social-card lb-status">
+        <h3>Set your status</h3>
+        <div className="lb-status-avatar" aria-hidden>
+          <span>{data.user.display_name[0]}</span>
+          <i className="lb-status-bubble" />
+          <i className="lb-status-dot" />
+        </div>
+        <div className="lb-status-grid">
+          {STATUS_FACES.map((face) => (
+            <button key={face} type="button" className={face === "glasses" || face === "angry" ? "owl" : ""} aria-label={`Status ${face}`}>
+              {face === "glasses" || face === "angry"
+                ? <Image src={`/leaderboard-assets/${face}.svg`} width={42} height={28} alt="" />
+                : <span aria-hidden>{STATUS_EMOJI[face]}</span>}
+            </button>
+          ))}
+        </div>
+      </section>
+      <SupportFooter />
+    </aside>
+  );
 }
 
 function ProfileRail({ data, onSoon }: { data: Bootstrap; onSoon: (feature: string) => void }) {

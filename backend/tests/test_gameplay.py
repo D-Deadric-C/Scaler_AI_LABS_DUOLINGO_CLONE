@@ -230,10 +230,10 @@ def test_reset_leaves_rivals_untouched(client: APIClient) -> None:
 
 # ----------------------------------------------------------------- settings
 def test_settings_persist_and_drive_the_daily_goal(client: APIClient) -> None:
-    assert client.patch("/api/v1/me/settings", json={"dark_mode": True}).json()["dark_mode"] is True
-    assert me(client)["dark_mode"] is True
+    assert client.patch("/api/v1/me/settings", json={"dark_mode": False}).json()["dark_mode"] is False
+    assert me(client)["dark_mode"] is False
     changed = client.patch("/api/v1/me/settings", json={"daily_goal": 30}).json()
-    assert changed["daily_goal"] == 30 and changed["dark_mode"] is True
+    assert changed["daily_goal"] == 30 and changed["dark_mode"] is False
     quest = next(item for item in client.get("/api/v1/quests").json()["quests"] if item["id"] == "daily-xp")
     assert (quest["target"], quest["title"]) == (30, "Earn 30 XP")
     assert client.patch("/api/v1/me/settings", json={}).status_code == 200

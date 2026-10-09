@@ -133,7 +133,7 @@ LEARNER_USERNAME = "learner"
 LEARNER_WEEKLY_SEED_XP = 95
 LEARNER_BASELINE = {
     "total_xp": 185, "gems": 480, "hearts": 4, "max_hearts": 5, "current_streak": 7, "longest_streak": 12,
-    "daily_goal": 20, "dark_mode": False,
+    "daily_goal": 20, "dark_mode": True,
 }
 ACHIEVEMENTS = [
     ("first-step", "First Steps", "Complete your first lesson", "shoe", 1, "lessons"),

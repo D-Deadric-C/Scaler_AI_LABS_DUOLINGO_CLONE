@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { applyTheme } from "@/lib/theme";
 import { setSoundEnabled, useSoundEnabled } from "../lesson/sounds";
 import { useToast } from "../Toast";
 import { PageHeader, SupportLayout } from "./SupportLayout";
@@ -15,13 +16,12 @@ function Setting({ title, description, checked, setChecked }: { title: string; d
 export function SettingsPage() {
   const toast = useToast();
   const sound = useSoundEnabled();
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(true);
   const [goal, setGoal] = useState(20);
   const [motivation, setMotivation] = useState(true);
-  const applyTheme = (value: boolean) => { document.documentElement.dataset.theme = value ? "dark" : "light"; };
 
   useEffect(() => {
-    api.me().then((user) => { setDark(user.dark_mode); setGoal(user.daily_goal); applyTheme(user.dark_mode); }).catch(() => undefined);
+    api.me().then((user) => { setDark(user.dark_mode); setGoal(user.daily_goal); }).catch(() => undefined);
   }, []);
 
   const save = async () => {
@@ -42,7 +42,7 @@ export function SettingsPage() {
         <PageHeader eyebrow="ACCOUNT" title="Settings" description="Manage your learning preferences." />
         <section className="reference-settings-card">
           <Setting title="Sound effects" description="Play sounds during lessons" checked={sound} setChecked={setSoundEnabled} />
-          <Setting title="Dark mode" description="Use the dark Duolingo theme" checked={dark} setChecked={(value) => { setDark(value); applyTheme(value); }} />
+          <Setting title="Dark mode" description="Switch between the light and dark Duolingo themes" checked={dark} setChecked={(value) => { setDark(value); applyTheme(value ? "dark" : "light"); api.updateSettings({ dark_mode: value }).catch(() => undefined); }} />
           <Setting title="Motivational messages" description="Show reminders and celebrations" checked={motivation} setChecked={setMotivation} />
         </section>
         <h2 className="settings-heading">Daily goal</h2>

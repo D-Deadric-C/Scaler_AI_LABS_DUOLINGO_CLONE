@@ -13,7 +13,12 @@ data/
 *.tsbuildinfo
 
 # Local project notes and reference material (not part of the submission)
-README.md
+README.handoff.local.md
+README.submission.md
+PROJECT_CONTEXT.md
+.local-tools/
+moresvgs/
+leaderboard/
 Assignment Duolingo Clone.docx
 duolingo-clone-plan.md
 duolingo-product-blueprint.md
@@ -21,3 +26,7 @@ learnpageimages/
 .agents/
 .codex/
 .cursor/
+frontend/AGENTS.md
+frontend/public/learn-assets/custom/
+frontend/src/app/lesson-preview/
+frontend/public/duolingo-assets/*.svg.local

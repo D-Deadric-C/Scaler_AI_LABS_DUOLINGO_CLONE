@@ -1,10 +1,10 @@
 /* Lesson player: dark Duolingo-style layout. Every class is prefixed `lx-` to stay isolated from the rest of the app. */
 .lx-page, .lx-state, .lx-complete, .lx-overlay, .lx-toast {
-  --lx-bg: #141f24;
-  --lx-panel: #202f35;
-  --lx-line: #36444d;
-  --lx-muted: #50626a;
-  --lx-text: #e7edf0;
+  --lx-bg: var(--th-bg);
+  --lx-panel: var(--th-panel);
+  --lx-line: var(--th-line);
+  --lx-muted: var(--th-faint);
+  --lx-text: var(--th-text);
   --lx-green: #8eca32;
   --lx-green-dark: #75b232;
   --lx-green-text: #75b232;
@@ -15,9 +15,8 @@
   --lx-red-text: #cf4646;
   --lx-red-action: #9c4042;
   --lx-blue: #1993cd;
-  --lx-blue-line: #3e80a1;
+  --lx-blue-line: var(--th-sel-line);
   --lx-purple: #c67df4;
-  color-scheme: dark;
   background: var(--lx-bg);
   color: var(--lx-text);
   font-weight: 700;
@@ -29,7 +28,7 @@
 .lx-header { width: min(100% - 32px, 1000px); height: 132px; margin: 0 auto; box-sizing: border-box; display: grid; grid-template-columns: 17px minmax(0, 1fr) 50px; align-items: center; column-gap: 25px; }
 .lx-close { width: 17px; height: 24px; display: grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--lx-muted); cursor: pointer; }
 .lx-close svg { width: 17px; height: 17px; }
-.lx-close:hover { color: #c3ced4; }
+.lx-close:hover { color: var(--th-muted); }
 .lx-progress-wrap { position: relative; }
 .lx-progress { height: 16px; border-radius: 8px; background: var(--lx-line); overflow: hidden; }
 .lx-progress span { position: relative; display: block; height: 100%; border-radius: 8px; background: var(--lx-green); transition: width .45s cubic-bezier(.3, .7, .3, 1); }
@@ -52,11 +51,11 @@
 .lx-main.shake .lx-exercise { animation: lxShake .45s ease-in-out; }
 .lx-exercise { animation: lxFadeUp .28s ease-out; }
 .lx-title { margin: 0 0 27px; font-size: 28.7px; font-weight: 800; line-height: 34px; }
-.lx-hint { margin: -12px 0 24px; color: #a7b7be; font-weight: 600; }
+.lx-hint { margin: -12px 0 24px; color: var(--th-muted); font-weight: 600; }
 .lx-question { margin: 0 0 32px; font-size: 17.1px; font-weight: 800; line-height: 22px; }
 .lx-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-.lx-word { padding-bottom: 2px; background: repeating-linear-gradient(to right, var(--dash, #50626a) 0 3px, transparent 3px 6px) left bottom / 100% 2px no-repeat; }
+.lx-word { padding-bottom: 2px; background: repeating-linear-gradient(to right, var(--dash, var(--th-faint)) 0 3px, transparent 3px 6px) left bottom / 100% 2px no-repeat; }
 .lx-word-key { --dash: var(--lx-purple); color: var(--lx-purple); font-weight: 700; }
 
 .lx-passage { margin-bottom: 32px; }
@@ -68,7 +67,7 @@
 .lx-choices, .lx-match-column { display: grid; gap: 10px; }
 .lx-card { position: relative; box-sizing: border-box; min-height: 58px; padding: 0 24px 0 49px; border: 2px solid var(--lx-line); border-radius: 14px; background: transparent; box-shadow: 0 2px 0 var(--lx-line); color: var(--lx-text); font: inherit; font-size: 17.6px; font-weight: 600; text-align: center; cursor: pointer; display: grid; place-items: center; transition: background .12s, border-color .12s, transform .08s, box-shadow .08s; }
 .lx-card kbd { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); box-sizing: border-box; width: 30px; height: 30px; display: grid; place-items: center; border: 2px solid var(--lx-line); border-radius: 8px; color: var(--lx-muted); font: inherit; font-size: 14px; font-weight: 800; }
-.lx-card:hover:not(:disabled) { background: #1a2a31; }
+.lx-card:hover:not(:disabled) { background: var(--th-panel-a); }
 .lx-card:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 0 0 var(--lx-line); }
 .lx-card:disabled { cursor: default; }
 .lx-card.selected, .lx-card.wrong { border-color: var(--lx-blue-line); background: var(--lx-panel); color: var(--lx-blue); box-shadow: 0 2px 0 var(--lx-blue-line); }
@@ -87,7 +86,7 @@
 .lx-answer-lines { min-height: 118px; padding: 6px 0 0; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 8px; background-image: repeating-linear-gradient(to bottom, transparent 0 56px, var(--lx-line) 56px 58px); }
 .lx-bank-tokens { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .lx-chip { box-sizing: border-box; height: 48px; padding: 0 16px; border: 2px solid var(--lx-line); border-radius: 12px; background: var(--lx-bg); box-shadow: 0 2px 0 var(--lx-line); color: var(--lx-text); font: inherit; font-size: 17.6px; font-weight: 600; cursor: pointer; animation: lxChipIn .18s ease-out; }
-.lx-chip:hover:not(:disabled) { background: #1a2a31; }
+.lx-chip:hover:not(:disabled) { background: var(--th-panel-a); }
 .lx-chip:active:not(:disabled) { transform: translateY(2px); box-shadow: none; }
 .lx-chip:disabled { cursor: default; }
 .lx-chip-ghost { display: inline-grid; place-items: center; background: var(--lx-line); border-color: var(--lx-line); box-shadow: none; color: transparent; user-select: none; animation: none; }
@@ -154,12 +153,12 @@
 .lx-button-sky { background: #47b8ee; box-shadow: 0 4px 0 #1993cd; color: #141f24; }
 .lx-button-sky.light { color: #f4f4f4; }
 .lx-button-blue { background: #1cb0f6; box-shadow: 0 4px 0 #1899d6; color: #fff; }
-.lx-button-ghost { border: 2px solid var(--lx-line); background: transparent; color: #7b8f98; }
-.lx-button-ghost:hover:not(:disabled) { color: #b4c3ca; border-color: #647984; }
+.lx-button-ghost { border: 2px solid var(--lx-line); background: transparent; color: var(--th-muted); }
+.lx-button-ghost:hover:not(:disabled) { color: var(--th-muted); border-color: var(--th-muted); }
 .lx-button-link { background: transparent; color: #4ecaf4; box-shadow: none; }
 .lx-button:hover:not(:disabled) { filter: brightness(1.06); }
 .lx-button-primary:active:not(:disabled), .lx-button-blue:active:not(:disabled), .lx-button-sky:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 0 0 rgba(0, 0, 0, .3); }
-.lx-button:disabled { background: var(--lx-line); box-shadow: 0 4px 0 #2b3a42; color: #61737d; cursor: not-allowed; }
+.lx-button:disabled { background: var(--lx-line); box-shadow: 0 4px 0 var(--th-panel-b); color: var(--th-faint); cursor: not-allowed; }
 .lx-button-ghost:disabled { background: transparent; box-shadow: none; }
 .lx-wide { min-width: min(100%, 320px); }
 
@@ -186,11 +185,11 @@
 .lx-option:active { transform: translateY(2px); }
 .lx-button-link.danger { color: var(--lx-red); font-size: 14px; }
 .lx-button-link { font-size: 14px; }
-.lx-toast { position: fixed; left: 50%; bottom: 164px; transform: translateX(-50%); z-index: 90; padding: 12px 18px; border-radius: 12px; background: #f1f7fb; color: #172225; font-weight: 800; animation: lxToast 2.2s ease forwards; }
+.lx-toast { position: fixed; left: 50%; bottom: 164px; transform: translateX(-50%); z-index: 90; padding: 12px 18px; border-radius: 12px; background: var(--th-text); color: #172225; font-weight: 800; animation: lxToast 2.2s ease forwards; }
 .lx-toast.error { background: var(--lx-red); color: #fff; bottom: 24px; animation-duration: 4s; }
 .lx-state { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 30px; text-align: center; position: relative; overflow: hidden; }
 .lx-state h1 { margin: 0; font-size: 32px; font-weight: 800; }
-.lx-state p { margin: 0; color: #aebdc3; font-weight: 600; }
+.lx-state p { margin: 0; color: var(--th-muted); font-weight: 600; }
 
 /* ------------------------------------------------------------ completion */
 .lx-complete { min-height: 100dvh; display: grid; grid-template-rows: minmax(0, 1fr) auto; position: relative; overflow: hidden; }
@@ -251,3 +250,9 @@
   .lx-button { min-width: 112px; height: 46px; padding: 0 14px; }
   .lx-toast { bottom: 128px; }
 }
+
+/* Light theme: tinted feedback bars like the real app. */
+:root[data-theme="light"] .lx-footer.correct { background: #d7ffb8; border-top-color: #d7ffb8; }
+:root[data-theme="light"] .lx-footer.incorrect { background: #ffdfe0; border-top-color: #ffdfe0; }
+:root[data-theme="light"] .correct .lx-feedback-text { color: #58a700; }
+:root[data-theme="light"] .incorrect .lx-feedback-text { color: #ea2b2b; }

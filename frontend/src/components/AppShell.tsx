@@ -3,7 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { api } from "@/lib/api";
 import { useHoverMenu } from "@/lib/useHoverMenu";
 import { ArtSlot } from "./learn/ArtSlot";
 import { ToastProvider, useToast } from "./Toast";
@@ -43,6 +44,8 @@ function MoreMenu({ asset, pathname }: { asset: string; pathname: string }) {
 
 function ReferenceSidebar({ pathname }: { pathname: string }) {
   const toast = useToast();
+  const [initial, setInitial] = useState("");
+  useEffect(() => { api.me().then((user) => setInitial(user.display_name[0] ?? "")).catch(() => undefined); }, []);
   return (
     <aside className="reference-side-nav">
       <Link href="/learn" className="reference-wordmark" aria-label="Duolingo home">
@@ -65,7 +68,7 @@ function ReferenceSidebar({ pathname }: { pathname: string }) {
           return (
             <Link key={label} href={href} className={`reference-nav-item ${active ? "active" : ""}`}>
               {label === "PROFILE" ? (
-                <span className="reference-profile-icon" aria-hidden><Image src={`/learn-assets/${asset}`} width={35} height={35} alt="" /></span>
+                <span className="reference-profile-icon" aria-hidden>{initial}</span>
               ) : (
                 <Image src={`/learn-assets/${asset}`} width={35} height={35} alt="" aria-hidden />
               )}
@@ -87,7 +90,7 @@ function ReferenceSidebar({ pathname }: { pathname: string }) {
 function ReferenceMobileNav({ pathname }: { pathname: string }) {
   return (
     <nav className="reference-mobile-nav" aria-label="Mobile navigation">
-      {learnNav.slice(0, 5).map(([href, label, asset]) => (
+      {learnNav.filter(([href]) => !href.includes("#")).map(([href, label, asset]) => (
         <Link key={label} href={href} aria-label={label} className={!href.includes("#") && pathname.startsWith(href) ? "active" : ""}>
           <Image src={`/learn-assets/${asset}`} width={31} height={31} alt="" />
         </Link>

@@ -165,7 +165,7 @@ class User(Base):
     longest_streak: Mapped[int] = mapped_column(Integer, default=0)
     last_active_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     daily_goal: Mapped[int] = mapped_column(Integer, default=20)
-    dark_mode: Mapped[bool] = mapped_column(Boolean, default=False)
+    dark_mode: Mapped[bool] = mapped_column(Boolean, default=True)
     tz_offset_minutes: Mapped[int] = mapped_column(Integer, default=0)  # learner's UTC offset; decides which calendar day a lesson counts for
 
 
