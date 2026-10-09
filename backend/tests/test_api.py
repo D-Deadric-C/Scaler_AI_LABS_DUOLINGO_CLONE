@@ -1,61 +1,15 @@
-import asyncio
 from datetime import date, datetime, timedelta
 
-import httpx
-import pytest
-from sqlalchemy import create_engine, delete, event, func, select
+from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.orm import sessionmaker
 
-from app.database import Base, get_db
-from app.main import app
+from app.database import Base
 from app.models import ExerciseAttempt, LessonAttempt, User, UserAchievement
 from app.seed import seed_database
 from app.services.hearts import regenerate_hearts
 from app.services.streaks import effective_streak, update_streak
-
-
-class APIClient:
-    def request(self, method: str, path: str, **kwargs) -> httpx.Response:
-        async def send() -> httpx.Response:
-            transport = httpx.ASGITransport(app=app)
-            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-                return await client.request(method, path, **kwargs)
-
-        return asyncio.run(send())
-
-    def get(self, path: str) -> httpx.Response:
-        return self.request("GET", path)
-
-    def post(self, path: str, **kwargs) -> httpx.Response:
-        return self.request("POST", path, **kwargs)
-
-
-@pytest.fixture()
-def client(tmp_path):
-    test_engine = create_engine(
-        f"sqlite:///{tmp_path / 'test.db'}",
-        connect_args={"check_same_thread": False},
-    )
-
-    @event.listens_for(test_engine, "connect")
-    def enable_foreign_keys(connection, _record):
-        connection.execute("PRAGMA foreign_keys=ON")
-
-    test_sessions = sessionmaker(bind=test_engine, autoflush=False, expire_on_commit=False)
-    Base.metadata.create_all(bind=test_engine)
-    with test_sessions() as db:
-        seed_database(db)
-
-    async def test_db():
-        with test_sessions() as db:
-            yield db
-
-    app.dependency_overrides[get_db] = test_db
-    try:
-        yield APIClient()
-    finally:
-        app.dependency_overrides.pop(get_db, None)
-        test_engine.dispose()
+from conftest import APIClient, Clock
+from helpers import FIRST_LESSON_ANSWERS, finish_perfect_lesson, start, submit_answer
 
 
 def test_health_and_seeded_path(client: APIClient) -> None:
@@ -285,45 +239,6 @@ def test_displayed_streak_expires_after_a_missed_day() -> None:
     assert effective_streak(user, today) == 1
 
 
-# --------------------------------------------------------------- hardening
-FIRST_LESSON_ANSWERS = ["My name is Ana", ["Vivo", "en", "Delhi"], [["nombre", "name"], ["vivo", "I live"], ["mucho gusto", "nice to meet you"]], "llamo", "mucho gusto"]
-
-
-def start(client: APIClient, skill_index: int = 1, mode: str = "lesson") -> dict:
-    path = client.get("/api/v1/courses/1/path").json()
-    lesson_id = path["units"][0]["skills"][skill_index]["lesson_id"]
-    return client.post(f"/api/v1/lessons/{lesson_id}/attempts", json={"mode": mode}).json()
-
-
-def answer(client: APIClient, attempt: dict, index: int, value) -> httpx.Response:
-    return client.post(f"/api/v1/attempts/{attempt['attempt_id']}/answers", json={"exercise_id": attempt["exercises"][index]["id"], "answer": value})
-
-
-def finish_perfect_lesson(client: APIClient) -> dict:
-    attempt = start(client)
-    for index, value in enumerate(FIRST_LESSON_ANSWERS):
-        assert answer(client, attempt, index, value).json()["correct"] is True
-    return client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete").json()
-
-
-class Clock:
-    def __init__(self, value: datetime) -> None:
-        self.value = value
-
-    def __call__(self) -> datetime:
-        return self.value
-
-
-@pytest.fixture()
-def clock(monkeypatch) -> Clock:
-    import app.services.clock as clock_module
-    from app.models import utc_now
-
-    fake = Clock(utc_now())
-    monkeypatch.setattr(clock_module, "current_time", fake)
-    return fake
-
-
 def test_second_mistake_does_not_restart_the_heart_timer() -> None:
     from app.services.hearts import lose_heart
 
@@ -350,19 +265,19 @@ def test_refill_rules_and_gem_ledger(client: APIClient) -> None:
     assert client.post("/api/v1/hearts/practice-refill").status_code == 409
     assert client.post("/api/v1/hearts/gem-refill").status_code == 409
     attempt = start(client)
-    answer(client, attempt, 0, "wrong")
+    submit_answer(client, attempt, 0, "wrong")
     refill = client.post("/api/v1/hearts/gem-refill").json()
     assert refill["hearts"] == 5
     assert refill["gems"] == 480 - 350
-    answer(client, attempt, 1, "wrong")
+    submit_answer(client, attempt, 1, "wrong")
     assert client.post("/api/v1/hearts/gem-refill").status_code == 409  # only 130 gems left
 
 
 def test_practice_never_costs_hearts_and_rewards_one(client: APIClient) -> None:
     attempt = start(client, mode="practice")
-    assert answer(client, attempt, 0, "wrong").json()["hearts"] == 4
+    assert submit_answer(client, attempt, 0, "wrong").json()["hearts"] == 4
     for index, value in list(enumerate(FIRST_LESSON_ANSWERS))[1:]:
-        answer(client, attempt, index, value)
+        submit_answer(client, attempt, index, value)
     result = client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete").json()
     assert result["hearts"] == 5
     path = client.get("/api/v1/courses/1/path").json()
@@ -372,7 +287,7 @@ def test_practice_never_costs_hearts_and_rewards_one(client: APIClient) -> None:
 def test_practice_is_allowed_with_zero_hearts(client: APIClient) -> None:
     attempt = start(client)
     for index in range(4):
-        answer(client, attempt, index, "wrong")
+        submit_answer(client, attempt, index, "wrong")
     assert client.post(f"/api/v1/lessons/{attempt['lesson']['id']}/attempts", json={"mode": "lesson"}).status_code == 409
     assert client.post(f"/api/v1/lessons/{attempt['lesson']['id']}/attempts", json={"mode": "practice"}).status_code == 200
 
@@ -388,7 +303,7 @@ def test_legendary_requires_completed_skill_and_is_server_timed(client: APIClien
     resumed = client.post(f"/api/v1/lessons/{done_lesson}/attempts", json={"mode": "legendary"}).json()
     assert resumed["attempt_id"] == attempt["attempt_id"] and resumed["seconds_left"] == 35
     clock.value += timedelta(seconds=60)
-    late = answer(client, attempt, 0, "hello")
+    late = submit_answer(client, attempt, 0, "hello")
     assert late.status_code == 409 and late.json()["detail"] == "Time is up"
     assert client.get(f"/api/v1/attempts/{attempt['attempt_id']}").json()["status"] == "abandoned"
     fresh = client.post(f"/api/v1/lessons/{done_lesson}/attempts", json={"mode": "legendary"}).json()
@@ -402,8 +317,8 @@ def test_answer_validation_and_ordering(client: APIClient) -> None:
     assert client.post(base, json={"exercise_id": attempt["exercises"][0]["id"], "answer": "x" * 400}).status_code == 422
     assert client.post(base, json={"exercise_id": attempt["exercises"][0]["id"], "answer": ["a"] * 100}).status_code == 422
     assert client.post(base, json={"exercise_id": attempt["exercises"][3]["id"], "answer": "llamo"}).status_code == 409
-    assert answer(client, attempt, 0, "My name is Ana").status_code == 200
-    assert answer(client, attempt, 0, "My name is Ana").status_code == 409
+    assert submit_answer(client, attempt, 0, "My name is Ana").status_code == 200
+    assert submit_answer(client, attempt, 0, "My name is Ana").status_code == 409
     assert client.post(base, json={"exercise_id": 99999, "answer": "x"}).status_code == 409
     assert client.post("/api/v1/attempts/99999/answers", json={"exercise_id": 1, "answer": "x"}).status_code == 404
     assert client.get("/api/v1/attempts/99999").status_code == 404
@@ -414,8 +329,8 @@ def test_answer_validation_and_ordering(client: APIClient) -> None:
 def test_typed_answers_ignore_case_punctuation_and_accents(client: APIClient) -> None:
     attempt = start(client)
     for index in range(4):
-        answer(client, attempt, index, FIRST_LESSON_ANSWERS[index])
-    assert answer(client, attempt, 4, "  Mucho   GUSTO! ").json()["correct"] is True
+        submit_answer(client, attempt, index, FIRST_LESSON_ANSWERS[index])
+    assert submit_answer(client, attempt, 4, "  Mucho   GUSTO! ").json()["correct"] is True
 
 
 def test_attempt_state_machine_blocks_invalid_transitions(client: APIClient) -> None:
@@ -424,7 +339,7 @@ def test_attempt_state_machine_blocks_invalid_transitions(client: APIClient) -> 
     assert client.post(f"{base}/complete").status_code == 409  # nothing answered yet
     assert client.post(f"{base}/abandon").json()["status"] == "abandoned"
     assert client.post(f"{base}/abandon").json()["status"] == "abandoned"
-    assert answer(client, attempt, 0, "My name is Ana").status_code == 409
+    assert submit_answer(client, attempt, 0, "My name is Ana").status_code == 409
     assert client.post(f"{base}/complete").status_code == 409
     done = finish_perfect_lesson(client)
     assert client.post(f"/api/v1/attempts/{done['attempt_id']}/abandon").json()["status"] == "completed"
@@ -442,9 +357,9 @@ def test_perfect_lesson_reports_goal_and_perfect_flag(client: APIClient) -> None
 def test_failed_attempt_gives_no_rewards_and_cannot_resume(client: APIClient) -> None:
     attempt = start(client)
     for index in range(4):
-        last = answer(client, attempt, index, "wrong").json()
+        last = submit_answer(client, attempt, index, "wrong").json()
     assert last["failed"] is True
-    assert answer(client, attempt, 4, "mucho gusto").status_code == 409
+    assert submit_answer(client, attempt, 4, "mucho gusto").status_code == 409
     state = client.get(f"/api/v1/attempts/{attempt['attempt_id']}").json()
     assert state["status"] == "failed"
     assert client.get("/api/v1/me").json()["total_xp"] == 185
@@ -457,7 +372,10 @@ def test_league_is_weekly_and_resets_with_the_calendar(client: APIClient, clock:
     assert board["entries"][0]["zone"] == "promotion" and board["entries"][-1]["zone"] == "demotion"
     clock.value = clock.value + timedelta(days=8)
     next_week = client.get("/api/v1/leaderboards/weekly").json()
-    assert all(entry["xp"] == 0 for entry in next_week["entries"])
+    learner = next(entry for entry in next_week["entries"] if entry["is_current"])
+    assert learner["xp"] == 0  # the learner's starting XP belongs to the first week only
+    assert {entry["name"]: entry["xp"] for entry in next_week["entries"] if not entry["is_current"]}["Maya"] == 260  # rivals earn again
+    assert next_week["entries"][-1]["is_current"]
     assert next_week["ends_in"].endswith("h")
 
 
@@ -554,85 +472,3 @@ def test_option_and_token_order_does_not_reveal_the_answer(client: APIClient) ->
         assert sorted(options) == sorted(["My name is Ana", "I know Ana", "Ana is here", "Goodbye Ana"])
         positions.add(options.index("My name is Ana"))
     assert len(positions) > 1
-
-
-# ------------------------------------------------------- schema integrity
-@pytest.fixture()
-def seeded_session(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'schema.db'}")
-
-    @event.listens_for(engine, "connect")
-    def enable_foreign_keys(connection, _record):
-        connection.execute("PRAGMA foreign_keys=ON")
-
-    Base.metadata.create_all(bind=engine)
-    with sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)() as db:
-        seed_database(db)
-        yield db
-    engine.dispose()
-
-
-@pytest.mark.parametrize(
-    ("changes", "constraint"),
-    [
-        ({"hearts": 6}, "ck_users_hearts_range"),
-        ({"hearts": -1}, "ck_users_hearts_range"),
-        ({"gems": -5}, "ck_users_gems"),
-        ({"total_xp": -1}, "ck_users_total_xp"),
-        ({"daily_goal": 0}, "ck_users_daily_goal"),
-        ({"current_streak": 20}, "ck_users_streaks"),
-    ],
-)
-def test_database_rejects_invalid_learner_state(seeded_session, changes, constraint) -> None:
-    from sqlalchemy.exc import IntegrityError
-
-    user = seeded_session.scalar(select(User).where(User.username == "learner"))
-    for field, value in changes.items():
-        setattr(user, field, value)
-    with pytest.raises(IntegrityError, match=constraint):
-        seeded_session.commit()
-    seeded_session.rollback()
-
-
-def test_database_rejects_invalid_attempt_and_exercise_values(seeded_session) -> None:
-    from sqlalchemy.exc import IntegrityError
-
-    from app.models import Exercise
-
-    attempt = seeded_session.scalar(select(LessonAttempt))
-    attempt.status = "paused"
-    with pytest.raises(IntegrityError, match="ck_lesson_attempts_status"):
-        seeded_session.commit()
-    seeded_session.rollback()
-    attempt = seeded_session.scalar(select(LessonAttempt))
-    attempt.correct_count = attempt.current_index + 1
-    with pytest.raises(IntegrityError, match="ck_lesson_attempts_progress"):
-        seeded_session.commit()
-    seeded_session.rollback()
-    exercise = seeded_session.scalar(select(Exercise))
-    exercise.type = "essay"
-    with pytest.raises(IntegrityError, match="ck_exercises_type"):
-        seeded_session.commit()
-    seeded_session.rollback()
-
-
-def test_deleting_an_attempt_removes_its_answers(seeded_session) -> None:
-    attempt = seeded_session.scalar(select(LessonAttempt))
-    assert seeded_session.scalar(select(func.count()).select_from(ExerciseAttempt)) == 5
-    seeded_session.delete(attempt)
-    seeded_session.commit()
-    assert seeded_session.scalar(select(func.count()).select_from(ExerciseAttempt)) == 0
-
-
-def test_ensure_schema_creates_missing_indexes_on_existing_tables(tmp_path) -> None:
-    from app.database import ensure_schema
-
-    engine = create_engine(f"sqlite:///{tmp_path / 'noindex.db'}")
-    ensure_schema(engine)
-    with engine.begin() as connection:
-        connection.exec_driver_sql("DROP INDEX ix_xp_events_user_created")
-    ensure_schema(engine)
-    with engine.connect() as connection:
-        names = {row[1] for row in connection.exec_driver_sql("PRAGMA index_list('xp_events')")}
-    assert "ix_xp_events_user_created" in names
-    engine.dispose()

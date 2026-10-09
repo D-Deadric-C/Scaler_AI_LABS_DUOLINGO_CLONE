@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ... import schemas
@@ -11,7 +12,8 @@ router = APIRouter()
 
 
 @router.get("/health", tags=["system"])
-def health() -> dict[str, str]:
+def health(db: Session = Depends(get_db)) -> dict[str, str]:
+    db.execute(text("SELECT 1"))  # fails (500) if the database is unreachable, so deploy checks are meaningful
     return {"status": "ok", "service": "duolingo-api"}
 
 

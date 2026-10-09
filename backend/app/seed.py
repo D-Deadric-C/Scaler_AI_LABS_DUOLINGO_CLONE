@@ -22,6 +22,7 @@ from .models import (
 )
 from .services import clock
 from .services.achievements import evaluate_achievements
+from .services.leaderboard import ensure_bot_weekly_xp
 
 
 SKILLS = [
@@ -53,7 +54,7 @@ EXERCISE_SETS = [
 
 
 LEARNER_USERNAME = "learner"
-WEEKLY_SEED_XP = {"learner": 95, "maya": 260, "leo": 210, "sam": 170, "nora": 125, "ari": 80}
+LEARNER_WEEKLY_SEED_XP = 95
 LEARNER_BASELINE = {
     "total_xp": 185, "gems": 480, "hearts": 4, "max_hearts": 5, "current_streak": 7, "longest_streak": 12,
     "daily_goal": 20, "dark_mode": False,
@@ -76,16 +77,13 @@ def ensure_achievements(db: Session) -> None:
     db.flush()
 
 
-def ensure_weekly_seed_events(db: Session) -> None:
-    """Seed this week's league XP as ledger events so the board resets with the calendar week."""
-    now = clock.current_time()
-    monday = clock.week_start(now)
-    for user in db.scalars(select(User)).all():
-        amount = WEEKLY_SEED_XP.get(user.username)
-        key = f"seed:weekly:{user.id}:{monday:%Y%m%d}"
-        if amount and not db.scalar(select(XPEvent.id).where(XPEvent.idempotency_key == key)):
-            db.add(XPEvent(user_id=user.id, amount=amount, source="seed", idempotency_key=key, created_at=monday))
-    db.flush()
+def seed_learner_week(db: Session, user: User) -> None:
+    """Record the sample learner's starting weekly XP once (never re-granted in later weeks)."""
+    already_seeded = db.scalar(select(XPEvent.id).where(XPEvent.user_id == user.id, XPEvent.source == "seed").limit(1))
+    if already_seeded is None:
+        monday = clock.week_start(clock.current_time())
+        db.add(XPEvent(user_id=user.id, amount=LEARNER_WEEKLY_SEED_XP, source="seed", idempotency_key=f"seed:weekly:{user.id}:{monday:%Y%m%d}", created_at=monday))
+        db.flush()
 
 
 def reset_learner(db: Session) -> None:
@@ -108,7 +106,7 @@ def reset_learner(db: Session) -> None:
     lesson = db.scalar(select(Lesson).where(Lesson.skill_id == first_skill.id).order_by(Lesson.position).limit(1))
     seed_sample_completion(db, user, lesson)
     db.add(DailyActivity(user_id=user.id, activity_date=now.date(), xp_earned=15, lessons_completed=0))
-    ensure_weekly_seed_events(db)
+    seed_learner_week(db, user)
     evaluate_achievements(db, user, now.date())
     db.commit()
 
@@ -178,7 +176,9 @@ def seed_database(db: Session) -> None:
             if lesson:
                 seed_sample_completion(db, user, lesson)
             evaluate_achievements(db, user)
-        ensure_weekly_seed_events(db)
+        if user:
+            seed_learner_week(db, user)
+        ensure_bot_weekly_xp(db)
         db.commit()
         return
 
@@ -226,7 +226,8 @@ def seed_database(db: Session) -> None:
     seed_sample_completion(db, users[0], first_lesson)
     db.add(DailyActivity(user_id=users[0].id, activity_date=clock.current_time().date(), xp_earned=15, lessons_completed=0))
     ensure_achievements(db)
-    ensure_weekly_seed_events(db)
+    seed_learner_week(db, users[0])
+    ensure_bot_weekly_xp(db)
     db.flush()
     evaluate_achievements(db, users[0])
     db.commit()
