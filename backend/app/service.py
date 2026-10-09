@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from datetime import date, datetime, timedelta
 from random import shuffle
 from typing import Any
@@ -48,6 +49,12 @@ def regenerate_hearts(user: User, now: datetime | None = None) -> None:
         user.hearts_updated_at += timedelta(minutes=regenerated * HEART_REGEN_MINUTES)
 
 
+def effective_streak(user: User, today: date) -> int:
+    if user.last_active_date not in {today, today - timedelta(days=1)}:
+        return 0
+    return user.current_streak
+
+
 def serialize_user(db: Session, user: User) -> dict[str, Any]:
     today_xp = db.scalar(select(DailyActivity.xp_earned).where(DailyActivity.user_id == user.id, DailyActivity.activity_date == date.today())) or 0
     return {
@@ -60,7 +67,7 @@ def serialize_user(db: Session, user: User) -> dict[str, Any]:
         "gems": user.gems,
         "hearts": user.hearts,
         "max_hearts": user.max_hearts,
-        "current_streak": user.current_streak,
+        "current_streak": effective_streak(user, date.today()),
         "longest_streak": user.longest_streak,
         "daily_goal": user.daily_goal,
         "today_xp": today_xp,
@@ -69,22 +76,30 @@ def serialize_user(db: Session, user: User) -> dict[str, Any]:
     }
 
 
+def ordered_skills(db: Session) -> list[Skill]:
+    return list(db.scalars(select(Skill).join(Unit).order_by(Unit.position, Skill.position)).all())
+
+
 def path_payload(db: Session, user_id: int = DEFAULT_USER_ID) -> dict[str, Any]:
     user = get_user(db, user_id)
     units = db.scalars(select(Unit).order_by(Unit.position)).all()
-    skills = db.scalars(select(Skill).order_by(Skill.unit_id, Skill.position)).all()
+    skills = ordered_skills(db)
+    skills_by_unit: dict[int, list[Skill]] = {unit.id: [] for unit in units}
+    for skill in skills:
+        skills_by_unit[skill.unit_id].append(skill)
+    first_lessons: dict[int, Lesson] = {}
+    for lesson in db.scalars(select(Lesson).order_by(Lesson.skill_id, Lesson.position)).all():
+        first_lessons.setdefault(lesson.skill_id, lesson)
     progress = {p.skill_id: p for p in db.scalars(select(SkillProgress).where(SkillProgress.user_id == user.id)).all()}
     completed_ids = {skill_id for skill_id, row in progress.items() if row.completed_lessons > 0}
-    ordered_ids = [skill.id for skill in skills]
     result_units = []
+    previous_complete = True
     for unit in units:
         unit_skills = []
-        for skill in [item for item in skills if item.unit_id == unit.id]:
-            index = ordered_ids.index(skill.id)
-            previous_complete = index == 0 or ordered_ids[index - 1] in completed_ids
+        for skill in skills_by_unit[unit.id]:
             row = progress.get(skill.id)
             status = "completed" if skill.id in completed_ids else "available" if previous_complete else "locked"
-            lesson = db.scalar(select(Lesson).where(Lesson.skill_id == skill.id).order_by(Lesson.position))
+            lesson = first_lessons.get(skill.id)
             unit_skills.append({
                 "id": skill.id,
                 "title": skill.title,
@@ -96,6 +111,7 @@ def path_payload(db: Session, user_id: int = DEFAULT_USER_ID) -> dict[str, Any]:
                 "lesson_id": lesson.id if lesson else None,
                 "xp_reward": lesson.xp_reward if lesson else 0,
             })
+            previous_complete = skill.id in completed_ids
         result_units.append({"id": unit.id, "position": unit.position, "title": unit.title, "objective": unit.objective, "color": unit.color, "skills": unit_skills})
     return {"course": {"id": 1, "title": "Spanish", "flag": "ES"}, "user": serialize_user(db, user), "units": result_units}
 
@@ -105,7 +121,7 @@ def start_attempt(db: Session, lesson_id: int, mode: str, user_id: int = DEFAULT
     lesson = db.get(Lesson, lesson_id)
     if not lesson:
         raise HTTPException(404, "Lesson not found")
-    ordered_skill_ids = list(db.scalars(select(Skill.id).order_by(Skill.unit_id, Skill.position)).all())
+    ordered_skill_ids = [skill.id for skill in ordered_skills(db)]
     skill_index = ordered_skill_ids.index(lesson.skill_id)
     if skill_index > 0:
         previous_skill_id = ordered_skill_ids[skill_index - 1]
@@ -165,7 +181,9 @@ def normalize_text(value: Any) -> str:
 def check_answer(exercise: Exercise, submitted: Any) -> bool:
     answer = exercise.answer
     if exercise.type == "word_bank":
-        tokens = submitted if isinstance(submitted, list) else []
+        if not isinstance(submitted, list) or not all(isinstance(token, str) for token in submitted):
+            return False
+        tokens = submitted
         return [normalize_text(item) for item in tokens] == [normalize_text(item) for item in answer["tokens"]]
     if exercise.type == "match_pairs":
         pairs = submitted if isinstance(submitted, list) else []
@@ -176,11 +194,15 @@ def check_answer(exercise: Exercise, submitted: Any) -> bool:
             for pair in pairs
         ):
             return False
-        normalized = {tuple(sorted((normalize_text(a), normalize_text(b)))) for a, b in pairs}
-        expected = {tuple(sorted((normalize_text(a), normalize_text(b)))) for a, b in answer["pairs"]}
+        normalized = Counter(tuple(sorted((normalize_text(a), normalize_text(b)))) for a, b in pairs)
+        expected = Counter(tuple(sorted((normalize_text(a), normalize_text(b)))) for a, b in answer["pairs"])
         return normalized == expected
     if exercise.type == "type_answer":
+        if not isinstance(submitted, str):
+            return False
         return normalize_text(submitted) in {normalize_text(item) for item in answer["accepted"]}
+    if not isinstance(submitted, str):
+        return False
     return normalize_text(submitted) == normalize_text(answer["value"])
 
 
@@ -237,7 +259,7 @@ def update_streak(user: User, today: date) -> None:
 
 def evaluate_achievements(db: Session, user: User) -> list[dict[str, Any]]:
     lesson_count = db.scalar(select(func.count()).select_from(LessonAttempt).where(LessonAttempt.user_id == user.id, LessonAttempt.status == "completed")) or 0
-    metrics = {"lessons": lesson_count, "xp": user.total_xp, "streak": user.current_streak}
+    metrics = {"lessons": lesson_count, "xp": user.total_xp, "streak": effective_streak(user, date.today())}
     awarded_ids = set(db.scalars(select(UserAchievement.achievement_id).where(UserAchievement.user_id == user.id)).all())
     newly_awarded = []
     for achievement in db.scalars(select(Achievement)).all():
@@ -304,7 +326,7 @@ def completion_payload(db: Session, attempt: LessonAttempt, user: User, achievem
         "attempt_id": attempt.id,
         "xp_awarded": attempt.xp_awarded,
         "accuracy": round(computed_accuracy * 100),
-        "streak": user.current_streak,
+        "streak": effective_streak(user, date.today()),
         "total_xp": user.total_xp,
         "new_achievements": achievements,
     }
@@ -321,7 +343,7 @@ def leaderboard_payload(db: Session, user_id: int = DEFAULT_USER_ID) -> dict[str
 def achievements_payload(db: Session, user_id: int = DEFAULT_USER_ID) -> list[dict[str, Any]]:
     user = get_user(db, user_id)
     lesson_count = db.scalar(select(func.count()).select_from(LessonAttempt).where(LessonAttempt.user_id == user.id, LessonAttempt.status == "completed")) or 0
-    metrics = {"lessons": lesson_count, "xp": user.total_xp, "streak": user.current_streak}
+    metrics = {"lessons": lesson_count, "xp": user.total_xp, "streak": effective_streak(user, date.today())}
     earned = set(db.scalars(select(UserAchievement.achievement_id).where(UserAchievement.user_id == user.id)).all())
     return [
         {"id": item.id, "title": item.title, "description": item.description, "icon": item.icon, "earned": item.id in earned, "progress": min(metrics.get(item.metric, 0), item.threshold), "threshold": item.threshold}

@@ -90,14 +90,14 @@ export function LessonPlayer({ lessonId, mode = "lesson" }: { lessonId: number; 
     return () => { cancelled = true; };
   }, [attempt]);
   useEffect(() => {
-    if (secondsLeft === null || result || (attempt && attempt.current_index >= attempt.exercises.length)) return;
+    if (!attempt || secondsLeft === null || result || feedback?.ready_to_complete || attempt.current_index >= attempt.exercises.length) return;
     if (secondsLeft <= 0) {
-      if (attempt) void api.abandon(attempt.attempt_id);
+      void api.abandon(attempt.attempt_id);
       return;
     }
     const timer = window.setTimeout(() => setSecondsLeft(secondsLeft - 1), 1000);
     return () => window.clearTimeout(timer);
-  }, [attempt, result, secondsLeft]);
+  }, [attempt, feedback?.ready_to_complete, result, secondsLeft]);
   const exercise = attempt?.exercises[attempt.current_index];
   const progress = attempt ? (attempt.current_index / attempt.exercises.length) * 100 : 0;
 

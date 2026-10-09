@@ -3,14 +3,14 @@ from datetime import date, datetime, timedelta
 
 import httpx
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, delete, event, func, select
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base, get_db
 from app.main import app
-from app.models import User
+from app.models import ExerciseAttempt, LessonAttempt, User, UserAchievement
 from app.seed import seed_database
-from app.service import regenerate_hearts, update_streak
+from app.service import effective_streak, regenerate_hearts, update_streak
 
 
 class APIClient:
@@ -65,6 +65,34 @@ def test_health_and_seeded_path(client: APIClient) -> None:
     assert statuses[:3] == ["completed", "available", "locked"]
 
 
+def test_seeded_progress_has_consistent_achievements(client: APIClient) -> None:
+    profile = client.get("/api/v1/me/profile").json()
+    achievements = {item["title"]: item for item in profile["achievements"]}
+    assert all(achievements[title]["earned"] for title in ("First Steps", "XP Explorer", "Wildfire"))
+    assert achievements["First Steps"]["progress"] == 1
+    assert achievements["Scholar"]["progress"] == 1
+    assert not achievements["Scholar"]["earned"]
+
+
+def test_existing_sample_data_is_reconciled_without_resetting_stats(tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'existing.db'}")
+    Base.metadata.create_all(bind=engine)
+    sessions = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    with sessions() as db:
+        seed_database(db)
+        db.execute(delete(ExerciseAttempt))
+        db.execute(delete(LessonAttempt))
+        db.execute(delete(UserAchievement))
+        db.commit()
+        original_xp = db.scalar(select(User.total_xp).where(User.username == "learner"))
+        seed_database(db)
+        seed_database(db)
+        assert db.scalar(select(func.count()).select_from(LessonAttempt)) == 1
+        assert db.scalar(select(func.count()).select_from(UserAchievement)) == 3
+        assert db.scalar(select(User.total_xp).where(User.username == "learner")) == original_xp
+    engine.dispose()
+
+
 def test_complete_lesson_is_idempotent(client: APIClient) -> None:
     path = client.get("/api/v1/courses/1/path").json()
     lesson_id = path["units"][0]["skills"][1]["lesson_id"]
@@ -78,6 +106,32 @@ def test_complete_lesson_is_idempotent(client: APIClient) -> None:
     second = client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete").json()
     assert first["xp_awarded"] == second["xp_awarded"]
     assert first["total_xp"] == second["total_xp"]
+
+
+def test_lesson_rewards_update_profile_quest_leaderboard_and_path(client: APIClient) -> None:
+    before = client.get("/api/v1/courses/1/path").json()
+    lesson_id = before["units"][0]["skills"][1]["lesson_id"]
+    weekly_before = next(entry["xp"] for entry in client.get("/api/v1/leaderboards/weekly").json()["entries"] if entry["is_current"])
+    attempt = client.post(f"/api/v1/lessons/{lesson_id}/attempts", json={"mode": "lesson"}).json()
+    answers = ["wrong", ["Vivo", "en", "Delhi"], [["nombre", "name"], ["vivo", "I live"], ["mucho gusto", "nice to meet you"]], "llamo", "mucho gusto"]
+    for exercise, answer in zip(attempt["exercises"], answers, strict=True):
+        response = client.post(f"/api/v1/attempts/{attempt['attempt_id']}/answers", json={"exercise_id": exercise["id"], "answer": answer})
+        assert response.status_code == 200
+
+    completion = client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete").json()
+    after = client.get("/api/v1/courses/1/path").json()
+    profile = client.get("/api/v1/me/profile").json()
+    weekly_after = next(entry["xp"] for entry in client.get("/api/v1/leaderboards/weekly").json()["entries"] if entry["is_current"])
+    assert completion["xp_awarded"] == 18
+    assert completion["accuracy"] == 80
+    assert after["user"]["total_xp"] == before["user"]["total_xp"] + 18
+    assert after["user"]["today_xp"] == before["user"]["today_xp"] + 18
+    assert after["user"]["current_streak"] == before["user"]["current_streak"] + 1
+    assert after["user"]["hearts"] == before["user"]["hearts"] - 1
+    assert after["units"][0]["skills"][1]["status"] == "completed"
+    assert after["units"][0]["skills"][2]["status"] == "available"
+    assert weekly_after == weekly_before + 18
+    assert any(item["title"] == "First Steps" and item["earned"] for item in profile["achievements"])
 
 
 def test_fully_answered_attempt_can_resume_and_complete_once(client: APIClient) -> None:
@@ -96,8 +150,28 @@ def test_fully_answered_attempt_can_resume_and_complete_once(client: APIClient) 
     first = client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete").json()
     second = client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete").json()
     assert first["total_xp"] == second["total_xp"] == initial_xp + first["xp_awarded"]
-    assert any(award["title"] == "First Steps" for award in first["new_achievements"])
+    assert first["new_achievements"] == []
     assert client.get("/api/v1/courses/1/path").json()["units"][0]["skills"][2]["status"] == "available"
+
+
+def test_completing_unit_one_unlocks_unit_two(client: APIClient) -> None:
+    answer_sets = [
+        ["My name is Ana", ["Vivo", "en", "Delhi"], [["nombre", "name"], ["vivo", "I live"], ["mucho gusto", "nice to meet you"]], "llamo", "mucho gusto"],
+        ["hello", ["Quiero", "café"], [["hola", "hello"], ["café", "coffee"], ["gracias", "thanks"]], "quiero", "gracias"],
+    ]
+    for skill_index, answers in zip((1, 2), answer_sets, strict=True):
+        path = client.get("/api/v1/courses/1/path").json()
+        lesson_id = path["units"][0]["skills"][skill_index]["lesson_id"]
+        attempt = client.post(f"/api/v1/lessons/{lesson_id}/attempts", json={"mode": "lesson"}).json()
+        for exercise, answer in zip(attempt["exercises"], answers, strict=True):
+            response = client.post(f"/api/v1/attempts/{attempt['attempt_id']}/answers", json={"exercise_id": exercise["id"], "answer": answer})
+            assert response.json()["correct"] is True
+        client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete")
+
+    path = client.get("/api/v1/courses/1/path").json()
+    assert all(skill["status"] == "completed" for skill in path["units"][0]["skills"])
+    assert path["units"][1]["skills"][0]["status"] == "available"
+    assert all(skill["status"] == "locked" for skill in path["units"][1]["skills"][1:])
 
 
 def test_match_pair_answers_are_not_sent_to_the_browser(client: APIClient) -> None:
@@ -125,6 +199,21 @@ def test_malformed_match_pairs_do_not_crash_the_api(client: APIClient) -> None:
         json={"exercise_id": match["id"], "answer": [["hola"], 42]},
     )
     assert response.status_code == 200
+    assert response.json()["correct"] is False
+
+
+def test_duplicate_match_pair_does_not_count_as_correct(client: APIClient) -> None:
+    path = client.get("/api/v1/courses/1/path").json()
+    lesson_id = path["units"][0]["skills"][1]["lesson_id"]
+    attempt = client.post(f"/api/v1/lessons/{lesson_id}/attempts", json={"mode": "lesson"}).json()
+    for exercise, answer in zip(attempt["exercises"][:2], ["My name is Ana", ["Vivo", "en", "Delhi"]], strict=True):
+        response = client.post(f"/api/v1/attempts/{attempt['attempt_id']}/answers", json={"exercise_id": exercise["id"], "answer": answer})
+        assert response.json()["correct"] is True
+    pairs = [["nombre", "name"], ["vivo", "I live"], ["mucho gusto", "nice to meet you"]]
+    response = client.post(
+        f"/api/v1/attempts/{attempt['attempt_id']}/answers",
+        json={"exercise_id": attempt["exercises"][2]["id"], "answer": pairs + [pairs[0]]},
+    )
     assert response.json()["correct"] is False
 
 
@@ -157,6 +246,10 @@ def test_zero_hearts_blocks_lessons_until_practice_refill(client: APIClient) -> 
         assert response.status_code == 200
     assert response.json()["failed"] is True
     assert response.json()["hearts"] == 0
+    failed_path = client.get("/api/v1/courses/1/path").json()
+    assert failed_path["user"]["total_xp"] == path["user"]["total_xp"]
+    assert failed_path["units"][0]["skills"][1]["status"] == "available"
+    assert client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete").status_code == 409
     assert client.post(f"/api/v1/lessons/{lesson_id}/attempts", json={"mode": "lesson"}).status_code == 409
     refill = client.post("/api/v1/hearts/practice-refill").json()
     assert refill["hearts"] == path["user"]["max_hearts"]
@@ -180,3 +273,12 @@ def test_streak_and_hearts_rules_accept_an_explicit_clock() -> None:
     update_streak(user, today + timedelta(days=2))
     assert user.current_streak == 1
     assert user.longest_streak == 4
+
+
+def test_displayed_streak_expires_after_a_missed_day() -> None:
+    today = date(2026, 10, 9)
+    user = User(username="streak-test", display_name="Streak Test", current_streak=7, longest_streak=7, last_active_date=today - timedelta(days=2))
+    assert effective_streak(user, today) == 0
+    assert user.current_streak == 7
+    update_streak(user, today)
+    assert effective_streak(user, today) == 1

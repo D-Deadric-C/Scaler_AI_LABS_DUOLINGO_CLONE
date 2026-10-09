@@ -8,12 +8,16 @@ from .models import (
     Course,
     DailyActivity,
     Exercise,
+    ExerciseAttempt,
     Lesson,
+    LessonAttempt,
     Skill,
     SkillProgress,
     Unit,
     User,
+    utc_now,
 )
+from .service import evaluate_achievements
 
 
 SKILLS = [
@@ -44,8 +48,50 @@ EXERCISE_SETS = [
 ]
 
 
+def seed_sample_completion(db: Session, user: User, lesson: Lesson) -> None:
+    existing = db.scalar(select(LessonAttempt.id).where(
+        LessonAttempt.user_id == user.id,
+        LessonAttempt.lesson_id == lesson.id,
+        LessonAttempt.status == "completed",
+    ))
+    if existing is not None:
+        return
+    db.flush()
+    exercises = db.scalars(select(Exercise).where(Exercise.lesson_id == lesson.id).order_by(Exercise.position)).all()
+    completed_at = utc_now() - timedelta(days=1)
+    attempt = LessonAttempt(
+        user_id=user.id,
+        lesson_id=lesson.id,
+        mode="lesson",
+        status="completed",
+        current_index=len(exercises),
+        correct_count=len(exercises),
+        xp_awarded=20,
+        started_at=completed_at - timedelta(minutes=3),
+        completed_at=completed_at,
+    )
+    db.add(attempt)
+    db.flush()
+    for exercise in exercises:
+        answer = exercise.answer
+        submitted = answer.get("value") or answer.get("tokens") or answer.get("pairs") or answer["accepted"][0]
+        db.add(ExerciseAttempt(attempt_id=attempt.id, exercise_id=exercise.id, submitted_answer={"value": submitted}, correct=True))
+
+
 def seed_database(db: Session) -> None:
     if db.scalar(select(Course.id).limit(1)) is not None:
+        user = db.scalar(select(User).where(User.username == "learner"))
+        first_skill = db.scalar(select(Skill).join(Unit).order_by(Unit.position, Skill.position).limit(1))
+        if user and first_skill and db.scalar(select(SkillProgress.id).where(
+            SkillProgress.user_id == user.id,
+            SkillProgress.skill_id == first_skill.id,
+            SkillProgress.completed_lessons > 0,
+        )):
+            lesson = db.scalar(select(Lesson).where(Lesson.skill_id == first_skill.id).order_by(Lesson.position).limit(1))
+            if lesson:
+                seed_sample_completion(db, user, lesson)
+            evaluate_achievements(db, user)
+            db.commit()
         return
 
     course = Course(slug="spanish-for-english", title="Spanish", target_language="Spanish", flag="ES")
@@ -60,6 +106,7 @@ def seed_database(db: Session) -> None:
     db.flush()
 
     all_skills: list[Skill] = []
+    first_lesson: Lesson | None = None
     for index, (title, description, icon) in enumerate(SKILLS):
         unit = units[0] if index < 3 else units[1]
         skill = Skill(unit_id=unit.id, position=(index % 3) + 1, title=title, description=description, icon=icon)
@@ -69,9 +116,12 @@ def seed_database(db: Session) -> None:
         lesson = Lesson(skill_id=skill.id, position=1, title=f"{title} · Lesson 1", xp_reward=10)
         db.add(lesson)
         db.flush()
+        if index == 0:
+            first_lesson = lesson
         source = EXERCISE_SETS[index % len(EXERCISE_SETS)]
         for position, (kind, prompt, payload, answer, explanation) in enumerate(source, start=1):
-            db.add(Exercise(lesson_id=lesson.id, position=position, type=kind, prompt=prompt, payload=payload, answer=answer, explanation=explanation))
+            exercise = Exercise(lesson_id=lesson.id, position=position, type=kind, prompt=prompt, payload=payload, answer=answer, explanation=explanation)
+            db.add(exercise)
 
     users = [
         User(username="learner", display_name="Alex", avatar_color="#1cb0f6", total_xp=185, weekly_xp=95, gems=480, hearts=4, current_streak=7, longest_streak=12, last_active_date=date.today() - timedelta(days=1), daily_goal=20),
@@ -85,12 +135,15 @@ def seed_database(db: Session) -> None:
     db.flush()
 
     db.add(SkillProgress(user_id=users[0].id, skill_id=all_skills[0].id, completed_lessons=1, crowns=1))
+    seed_sample_completion(db, users[0], first_lesson)
     db.add(DailyActivity(user_id=users[0].id, activity_date=date.today(), xp_earned=15, lessons_completed=0))
-    db.add_all([
+    achievements = [
         Achievement(slug="first-step", title="First Steps", description="Complete your first lesson", icon="shoe", threshold=1, metric="lessons"),
         Achievement(slug="xp-100", title="XP Explorer", description="Earn 100 total XP", icon="bolt", threshold=100, metric="xp"),
         Achievement(slug="streak-7", title="Wildfire", description="Reach a 7 day streak", icon="flame", threshold=7, metric="streak"),
         Achievement(slug="scholar", title="Scholar", description="Complete 5 lessons", icon="book", threshold=5, metric="lessons"),
-    ])
+    ]
+    db.add_all(achievements)
+    db.flush()
+    evaluate_achievements(db, users[0])
     db.commit()
-

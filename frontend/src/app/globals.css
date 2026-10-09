@@ -496,13 +496,18 @@ a { color: inherit; text-decoration: none; }
 }
 
 .reference-path-stage { height: 718px; position: relative; }
+.reference-path-stage-next { height: 370px; }
 .reference-step { position: absolute; z-index: 4; transform: translateX(-50%); }
-.reference-path-node { width: 72px; height: 66px; padding: 0; border: 0; border-radius: 50%; background: #d9914b; box-shadow: 0 7px #a8632e; color: white; display: grid; place-items: center; cursor: pointer; transition: transform .12s ease, filter .12s ease, box-shadow .12s ease; }
+.reference-node-ring { position: relative; padding: 5px; border-radius: 50%; background: conic-gradient(#f9b453 var(--ring-progress), transparent var(--ring-progress)); }
+.reference-node-ring.available { background: conic-gradient(#f9b453 9%, #3e535e 9%); }
+.reference-node-ring.locked { background: #26363d; }
+.reference-path-node { position: relative; width: 72px; height: 66px; padding: 0; border: 0; border-radius: 50%; background: #d9914b; box-shadow: 0 7px #a8632e; color: white; display: grid; place-items: center; cursor: pointer; transition: transform .12s ease, filter .12s ease, box-shadow .12s ease; }
 .reference-path-node:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-2px); }
 .reference-path-node:active:not(:disabled) { transform: translateY(5px); box-shadow: 0 2px #a8632e; }
 .reference-path-node.locked { background: #354750; box-shadow: 0 7px #26363d; cursor: not-allowed; }
 .reference-path-node.locked img { opacity: .25; filter: grayscale(1); }
 .reference-path-node.available::after { content: ""; position: absolute; inset: -8px; border: 4px solid rgba(217, 145, 75, .34); border-radius: 50%; animation: referencePulse 1.7s ease-in-out infinite; }
+.reference-node-crown { position: absolute; z-index: 2; right: -8px; bottom: -7px; width: 27px; height: 27px; border: 2px solid #fff2ae; border-radius: 50%; background: #ffc800; color: #936000; display: grid; place-items: center; font-size: 17px; line-height: 1; }
 @keyframes referencePulse { 50% { transform: scale(1.08); opacity: .55; } }
 .reference-check { width: 27px; height: 15px; border-left: 7px solid white; border-bottom: 7px solid white; transform: rotate(-45deg) translate(2px, -2px); border-radius: 2px; }
 .reference-book { width: 38px; height: 29px; display: flex; gap: 3px; transform: perspective(50px) rotateX(5deg); }
@@ -519,6 +524,11 @@ a { color: inherit; text-decoration: none; }
 .open-label { margin-bottom: 8px; padding: 10px 17px; border: 2px solid var(--reference-border); border-radius: 9px; background: #17262d; box-shadow: 0 3px #0e181d; color: #ef9d4a; font-size: 14px; font-weight: 900; letter-spacing: .7px; position: relative; }
 .open-label::after { content: ""; position: absolute; left: calc(50% - 8px); bottom: -8px; width: 13px; height: 13px; border-right: 2px solid var(--reference-border); border-bottom: 2px solid var(--reference-border); background: #17262d; transform: rotate(45deg); }
 .reference-path-guide { position: absolute; z-index: 3; width: 280px; height: auto; left: 50%; top: 130px; filter: drop-shadow(0 7px rgba(0, 0, 0, .22)); pointer-events: none; transform-origin: 50% 73%; animation: referenceGuideIdle 4.8s ease-in-out infinite; }
+.reference-preview-node { position: absolute; width: 72px; height: 66px; border-radius: 50%; background: #354750; box-shadow: 0 7px #26363d; display: grid; place-items: center; opacity: .8; }
+.reference-preview-node img { opacity: .3; filter: grayscale(1); }
+.reference-preview-node.preview-1 { left: 43%; top: 456px; }
+.reference-preview-node.preview-2 { left: 53%; top: 554px; }
+.reference-preview-node.preview-3 { left: 43%; top: 654px; }
 @keyframes referenceGuideIdle {
   0%, 100% { transform: translateY(0) rotate(-1deg); }
   35% { transform: translateY(-6px) rotate(.7deg); }
@@ -530,12 +540,17 @@ a { color: inherit; text-decoration: none; }
 .reference-next-section { min-height: 140px; margin-top: 14px; border: 2px solid var(--reference-border); border-radius: 15px 15px 0 0; display: grid; align-content: center; justify-items: center; gap: 14px; color: #dfe7eb; }
 .reference-next-section > span { padding: 4px 8px; border-radius: 6px; background: #33454e; color: #5f727b; font-size: 11px; font-weight: 900; }
 .reference-next-section h2 { margin: 0; display: flex; align-items: center; gap: 14px; font-size: 23px; }
+.reference-next-section + .reference-unit { margin-top: 48px; }
+.reference-next-section.unlocked { border-color: #58cc02; }
+.reference-next-section.unlocked > span { background: #264726; color: #8fdd69; }
+.reference-unit-banner-next { --unit-color: #1cb0f6; }
+.reference-next-section.unlocked + .reference-unit .reference-unit-banner-next { --unit-color: #1cb0f6; }
 .tiny-lock { width: 16px; height: 14px; background: #dfe7eb; }
 .tiny-lock::before { width: 9px; height: 8px; left: 3px; top: -6px; border-width: 3px; border-color: #dfe7eb; border-bottom: 0; }
 
 .reference-right-rail { align-self: start; display: grid; gap: 16px; }
 .reference-stats { height: 53px; display: flex; align-items: center; justify-content: space-between; }
-.reference-stats button { min-width: 55px; height: 42px; padding: 4px 6px; border: 0; border-radius: 10px; background: transparent; display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--reference-blue); cursor: pointer; }
+.reference-stats button { min-width: 55px; height: 42px; padding: 4px 3px; border: 0; border-radius: 10px; background: transparent; display: flex; align-items: center; justify-content: center; gap: 5px; color: var(--reference-blue); cursor: pointer; }
 .reference-stats button:hover { background: #1b2c34; }
 .reference-stats img { object-fit: contain; }
 .reference-stats strong { font-size: 14px; }
@@ -614,6 +629,7 @@ a { color: inherit; text-decoration: none; }
   .reference-unit-divider { margin-top: 40px; gap: 9px; }
   .reference-unit-divider strong { max-width: 230px; font-size: 14px; }
   .reference-path-stage { height: 690px; }
+  .reference-path-stage-next { height: 370px; }
   .reference-path-guide { left: 55%; width: 145px; }
   .reference-node-popover { width: 220px; }
   .reference-next-section { margin-bottom: 20px; }
