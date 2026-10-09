@@ -4,7 +4,7 @@ from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
-from app.models import ExerciseAttempt, LessonAttempt, User, UserAchievement
+from app.models import ExerciseAttempt, LessonAttempt, Skill, User, UserAchievement
 from app.seed import seed_database
 from app.services.hearts import regenerate_hearts
 from app.services.streaks import effective_streak, update_streak
@@ -16,6 +16,8 @@ def test_health_and_seeded_path(client: APIClient) -> None:
     assert client.get("/api/v1/health").json()["status"] == "ok"
     payload = client.get("/api/v1/courses/1/path").json()
     assert len(payload["units"]) == 2
+    assert [len(unit["skills"]) for unit in payload["units"]] == [6, 6]
+    assert len({skill["lesson_id"] for unit in payload["units"] for skill in unit["skills"]}) == 12
     statuses = [skill["status"] for unit in payload["units"] for skill in unit["skills"]]
     assert statuses[:3] == ["completed", "available", "locked"]
 
@@ -35,6 +37,8 @@ def test_existing_sample_data_is_reconciled_without_resetting_stats(tmp_path) ->
     sessions = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     with sessions() as db:
         seed_database(db)
+        for skill in db.scalars(select(Skill).where(Skill.position > 3)).all():
+            db.delete(skill)  # older databases had only three skills per unit
         db.execute(delete(ExerciseAttempt))
         db.execute(delete(LessonAttempt))
         db.execute(delete(UserAchievement))
@@ -42,6 +46,7 @@ def test_existing_sample_data_is_reconciled_without_resetting_stats(tmp_path) ->
         original_xp = db.scalar(select(User.total_xp).where(User.username == "learner"))
         seed_database(db)
         seed_database(db)
+        assert db.scalar(select(func.count()).select_from(Skill)) == 12
         assert db.scalar(select(func.count()).select_from(LessonAttempt)) == 1
         assert db.scalar(select(func.count()).select_from(UserAchievement)) == 4
         assert db.scalar(select(User.total_xp).where(User.username == "learner")) == original_xp
@@ -126,6 +131,11 @@ def test_completing_unit_one_unlocks_unit_two(client: APIClient) -> None:
             assert response.json()["correct"] is True
         client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete")
 
+    path = client.get("/api/v1/courses/1/path").json()
+    assert path["units"][0]["chest"]["status"] == "ready"
+    assert path["units"][1]["skills"][0]["status"] == "locked"
+    for skill_index in range(3, 6):
+        finish_perfect_lesson(client, skill_index)
     path = client.get("/api/v1/courses/1/path").json()
     assert all(skill["status"] == "completed" for skill in path["units"][0]["skills"])
     assert path["units"][1]["skills"][0]["status"] == "available"
@@ -407,7 +417,7 @@ def test_dev_reset_restores_seeded_learner(client: APIClient) -> None:
     me = client.get("/api/v1/me").json()
     assert (me["total_xp"], me["hearts"], me["gems"], me["current_streak"], me["today_xp"]) == (185, 4, 480, 7, 15)
     path = client.get("/api/v1/courses/1/path").json()
-    assert [skill["status"] for skill in path["units"][0]["skills"]] == ["completed", "available", "locked"]
+    assert [skill["status"] for skill in path["units"][0]["skills"]] == ["completed", "available"] + ["locked"] * 4
     assert sum(1 for item in client.get("/api/v1/achievements").json() if item["earned"]) == 4
     assert client.post("/api/v1/dev/reset").status_code == 200  # repeatable
 

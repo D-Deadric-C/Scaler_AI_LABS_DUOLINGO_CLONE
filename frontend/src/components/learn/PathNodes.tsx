@@ -2,76 +2,84 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, type CSSProperties } from "react";
+import type { CSSProperties } from "react";
 import type { PathSkill, PathUnit } from "@/lib/types";
+import { ArtSlot } from "./ArtSlot";
 import { offsetFor } from "./pathLayout";
 
 const GLYPH_LOCKED = ["grayheadphones.svg", "dumbleicon.svg", "trophy_white.svg"];
 
-function glyph(skill: PathSkill, index: number): string {
-  if (skill.status === "locked") return GLYPH_LOCKED[index % GLYPH_LOCKED.length];
-  return skill.status === "completed" ? "tick_white.svg" : "openbook_white.svg";
+function LevelGlyph({ status, index }: { status: PathSkill["status"]; index: number }) {
+  if (status === "available") {
+    return (
+      <svg className="pt-level-star" viewBox="0 0 48 48" aria-hidden>
+        <path d="m24 5 5.5 11.2 12.4 1.8-9 8.7 2.1 12.4L24 33.3l-11 5.8 2.1-12.4-9-8.7 12.4-1.8L24 5Z" />
+        <path d="m24 13 2.8 5.7 6.3.9-4.5 4.4 1 6.3-5.6-3-5.6 3 1-6.3-4.5-4.4 6.3-.9L24 13Z" className="inner" />
+      </svg>
+    );
+  }
+  if (status === "locked" && index % GLYPH_LOCKED.length === 0) {
+    return <ArtSlot name="duo-radio" width={36} height={35} fallback={<Image src="/learn-assets/grayheadphones.svg" width={36} height={32} alt="" aria-hidden />} />;
+  }
+  const asset = status === "completed" ? "tick_white.svg" : GLYPH_LOCKED[index % GLYPH_LOCKED.length];
+  return <Image src={`/learn-assets/${asset}`} width={36} height={32} alt="" aria-hidden />;
 }
 
 /** One skill (lesson) on the path: locked / available (with ring + START) / completed (with crown). */
-export function SkillNode({ skill, index, current }: { skill: PathSkill; index: number; current: boolean }) {
-  const [open, setOpen] = useState(false);
-  const locked = skill.status === "locked";
-  const progress = Math.min(100, Math.round((skill.progress / Math.max(1, skill.total_lessons)) * 100));
+type SkillNodeProps = {
+  skill: PathSkill;
+  status: PathSkill["status"];
+  index: number;
+  level: number;
+  placement: "above" | "below";
+  current: boolean;
+  open: boolean;
+  onToggle: () => void;
+  mirrored?: boolean;
+};
+
+export function SkillNode({ skill, status, index, level, placement, current, open, onToggle, mirrored = false }: SkillNodeProps) {
+  const locked = status === "locked";
+  const shownProgress = status === skill.status ? skill.progress : 0;
+  const progress = Math.min(100, Math.round((shownProgress / Math.max(1, skill.total_lessons)) * 100));
   return (
-    <div className="pt-item" style={{ "--dx": `${offsetFor(index)}px` } as CSSProperties} data-current={current || undefined}>
-      {open && !locked ? (
-        <div className="pt-popover" role="dialog" aria-label={`${skill.title} lesson`}>
+    <div className={`pt-item ${open ? "open" : ""}`} style={{ "--dx": `${offsetFor(index) * (mirrored ? -1 : 1)}px` } as CSSProperties} data-current={current || undefined}>
+      {open ? (
+        <div className={`pt-popover ${placement} skill ${status}`} role="dialog" aria-label={`${skill.title} level ${level}`}>
           <strong>{skill.title}</strong>
           <span>{skill.description}</span>
-          <span>{skill.progress} / {skill.total_lessons} lessons complete</span>
-          <Link href={`/lesson/${skill.lesson_id}${skill.status === "completed" ? "?mode=practice" : ""}`}>{skill.status === "completed" ? "PRACTICE" : `START +${skill.xp_reward} XP`}</Link>
-          {skill.status === "completed" ? <Link className="legendary" href={`/lesson/${skill.lesson_id}?mode=legendary`}>LEGENDARY ⚡</Link> : null}
+          <span>Level {level} of 6 · {shownProgress} / {skill.total_lessons} lessons complete</span>
+          {locked ? <span className="pt-locked-pill">COMPLETE THE LEVELS ABOVE</span> : <Link href={`/lesson/${skill.lesson_id}${status === "completed" ? "?mode=practice" : ""}`}>{status === "completed" ? `PRACTICE +${Math.max(5, Math.round(skill.xp_reward / 2))} XP` : `START +${skill.xp_reward} XP`}</Link>}
+          {status === "completed" ? <Link className="legendary" href={`/lesson/${skill.lesson_id}?mode=legendary`}>LEGENDARY +{skill.xp_reward * 2} XP</Link> : null}
         </div>
       ) : null}
       {current && !open ? <span className="pt-start" aria-hidden>START</span> : null}
-      <div className={`pt-ring ${skill.status}`} style={{ "--ring": `${skill.status === "available" ? Math.max(progress, 8) : progress}%` } as CSSProperties}>
-        <button type="button" className={`pt-node ${skill.status}`} disabled={locked} aria-expanded={locked ? undefined : open} aria-label={`${skill.title}, ${skill.status}, ${skill.progress} of ${skill.total_lessons} lessons complete`} onClick={() => setOpen((value) => !value)}>
-          <Image src={`/learn-assets/${glyph(skill, index)}`} width={36} height={32} alt="" aria-hidden />
+      <div className={`pt-ring ${status}`} style={{ "--ring": `${status === "available" ? Math.max(progress, 8) : progress}%` } as CSSProperties}>
+        <button type="button" className={`pt-node ${status}`} aria-expanded={open} aria-label={`${skill.title}, level ${level} of 6, ${status}, ${shownProgress} of ${skill.total_lessons} lessons complete`} onClick={onToggle}>
+          <LevelGlyph status={status} index={index} />
         </button>
       </div>
-      {skill.status === "completed" ? <span className="pt-crown" aria-label="Crown earned">♛</span> : null}
+      {status === "completed" ? <span className="pt-crown" aria-label="Crown earned">♛</span> : null}
     </div>
   );
 }
 
 /** Reward chest: locked (grey) until the unit is finished, then closed with an OPEN bubble, then opened. */
-export function ChestNode({ unit, index, onOpen }: { unit: PathUnit; index: number; onOpen: () => void }) {
+export function ChestNode({ unit, index, open, onToggle, onOpen, mirrored = false }: { unit: PathUnit; index: number; open: boolean; onToggle: () => void; onOpen: () => void; mirrored?: boolean }) {
   const { status } = unit.chest;
   return (
-    <div className="pt-item" style={{ "--dx": `${offsetFor(index)}px` } as CSSProperties}>
-      {status === "ready" ? <span className="pt-open-bubble">OPEN</span> : null}
-      <button type="button" className={`pt-chest ${status}`} disabled={status !== "ready"} aria-label={status === "ready" ? `Open the Unit ${unit.position} reward chest` : status === "opened" ? "Reward chest opened" : "Reward chest locked"} onClick={onOpen}>
-        <Image src={status === "opened" ? "/learn-assets/Chest_open.svg" : "/learn-assets/chest.svg"} width={80} height={80} alt="" aria-hidden />
-      </button>
-    </div>
-  );
-}
-
-/** Unit review trophy: unlocks once every skill in the unit is complete. */
-export function ReviewNode({ unit, index }: { unit: PathUnit; index: number }) {
-  const [open, setOpen] = useState(false);
-  const ready = unit.skills.length > 0 && unit.skills.every((skill) => skill.status === "completed");
-  const lessonId = unit.skills.at(-1)?.lesson_id;
-  return (
-    <div className="pt-item" style={{ "--dx": `${offsetFor(index)}px` } as CSSProperties}>
+    <div className={`pt-item ${open ? "open" : ""}`} style={{ "--dx": `${offsetFor(index) * (mirrored ? -1 : 1)}px` } as CSSProperties}>
       {open ? (
-        <div className="pt-popover" role="dialog" aria-label="Unit review">
-          <strong>Unit review</strong>
-          <span>{ready ? "Review everything you learned in this unit." : "Complete all levels above to unlock this!"}</span>
-          {ready && lessonId ? <Link href={`/lesson/${lessonId}?mode=practice`}>START REVIEW</Link> : <span className="pt-locked-pill">LOCKED</span>}
+        <div className="pt-popover above" role="dialog" aria-label={`Unit ${unit.position} reward chest`}>
+          <strong>Unit reward</strong>
+          <span>{status === "locked" ? "Complete the first three levels to unlock this chest." : status === "opened" ? "You already collected this unit reward." : `Open it to collect ${unit.chest.gems} gems.`}</span>
+          {status === "ready" ? <button type="button" className="pt-popover-action" onClick={onOpen}>OPEN +{unit.chest.gems} GEMS</button> : <span className="pt-locked-pill">{status === "opened" ? "COLLECTED" : "LOCKED"}</span>}
         </div>
       ) : null}
-      <div className={`pt-ring ${ready ? "completed" : "locked"}`}>
-        <button type="button" className={`pt-node ${ready ? "available" : "locked"}`} aria-expanded={open} aria-label={ready ? "Unit review" : "Unit review, locked"} onClick={() => setOpen((value) => !value)}>
-          <Image src="/learn-assets/trophy_white.svg" width={36} height={32} alt="" aria-hidden />
-        </button>
-      </div>
+      {status === "ready" ? <span className="pt-open-bubble">OPEN</span> : null}
+      <button type="button" className={`pt-chest ${status}`} aria-expanded={open} aria-label={status === "ready" ? `Open the Unit ${unit.position} reward chest` : status === "opened" ? "Reward chest opened" : "Reward chest locked"} onClick={onToggle}>
+        <Image src={status === "opened" ? "/learn-assets/Chest_open.svg" : "/learn-assets/chest.svg"} width={80} height={80} alt="" aria-hidden />
+      </button>
     </div>
   );
 }

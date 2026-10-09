@@ -75,7 +75,7 @@ function ReferenceSidebar({ pathname }: { pathname: string }) {
         })}
       </nav>
       <div className="reference-chess-card">
-        <span className="chess-pieces" aria-hidden>♞♟</span>
+        <ArtSlot name="chess-sidebar" width={58} height={48} className="chess-illustration" fallback={<span className="chess-pieces" aria-hidden>♞♟</span>} />
         <strong>Want to learn chess?</strong>
         <p>Duolingo makes it easy!</p>
         <button type="button" onClick={() => toast.soon("Chess")}>TRY CHESS</button>

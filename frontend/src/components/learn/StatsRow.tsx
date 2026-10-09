@@ -10,7 +10,7 @@ import { useToast } from "../Toast";
 import { ArtSlot } from "./ArtSlot";
 import { FlameIcon, HeartsRow } from "./icons";
 
-type Which = "course" | "streak" | "gems" | "hearts";
+type Which = "course" | "streak" | "xp" | "gems" | "hearts";
 
 function timeUntil(iso: string | null): string {
   if (!iso) return "";
@@ -93,6 +93,7 @@ export function StatsRow({ data, onChange }: { data: Bootstrap; onChange?: () =>
     <div className="pt-stats" ref={root}>
       <button type="button" className={open === "course" ? "open" : ""} aria-label="Spanish course" {...triggerProps("course")}><Image src="/learn-assets/usaflag.svg" width={35} height={27} alt="" /></button>
       <button type="button" className={`${open === "streak" ? "open" : ""} streak ${lit ? "lit" : ""}`} aria-label={`${user.current_streak} day streak`} {...triggerProps("streak")}><FlameIcon lit={lit} size={30} /><strong>{user.current_streak}</strong></button>
+      <button type="button" className={`${open === "xp" ? "open" : ""} xp`} aria-label={`${user.total_xp} total XP`} {...triggerProps("xp")}><span className="pt-xp-bolt" aria-hidden>⚡</span><strong>{user.total_xp}</strong></button>
       <button type="button" className={`${open === "gems" ? "open" : ""} gems`} aria-label={`${user.gems} gems`} {...triggerProps("gems")}><GemIcon size={30} /><strong>{user.gems}</strong></button>
       <button type="button" className={`${open === "hearts" ? "open" : ""} hearts`} aria-label={`${user.hearts} hearts`} {...triggerProps("hearts")}><Image src="/learn-assets/heart.svg" width={31} height={31} alt="" /><strong>{user.hearts}</strong></button>
       {open ? (
@@ -105,6 +106,12 @@ export function StatsRow({ data, onChange }: { data: Bootstrap; onChange?: () =>
             </>
           ) : null}
           {open === "streak" ? <StreakPopover streak={user.current_streak} longest={user.longest_streak} today={user.today} lastActive={user.last_active_date} onSoon={toast.soon} /> : null}
+          {open === "xp" ? (
+            <div className="pt-xp-pop">
+              <span className="pt-xp-bolt large" aria-hidden>⚡</span>
+              <div><h3>{user.total_xp} total XP</h3><p>{user.weekly_xp} XP this week</p><p>{user.today_xp} / {user.daily_goal} XP toward today&apos;s goal</p><Link href="/profile" onClick={dismiss}>VIEW PROFILE</Link></div>
+            </div>
+          ) : null}
           {open === "gems" ? (
             <div className="pt-gems-pop"><ArtSlot name="gems-chest" width={80} fallback={<Image src="/learn-assets/bluepoints.svg" width={64} height={64} alt="" aria-hidden />} /><div><h3>Gems</h3><p>You have {user.gems} gems</p><Link href="/shop" onClick={dismiss}>GO TO SHOP</Link></div></div>
           ) : null}

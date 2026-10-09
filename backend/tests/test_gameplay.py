@@ -9,7 +9,7 @@ from sqlalchemy.exc import OperationalError
 from app.models import Course, Exercise, HeartEvent, Lesson, LessonAttempt, Skill, Unit, SkillProgress, User, XPEvent
 from app.services.exercises import check_answer, normalize_text
 from conftest import APIClient, Clock
-from helpers import ANSWERS_BY_SKILL_INDEX, SET_B, all_skills, finish_perfect_lesson, start, submit_answer
+from helpers import SET_A, SET_B, all_skills, finish_perfect_lesson, start, submit_answer
 
 
 def me(client: APIClient) -> dict:
@@ -18,13 +18,13 @@ def me(client: APIClient) -> dict:
 
 # ------------------------------------------------------------ progression
 def test_playing_the_whole_course_completes_the_path_and_awards_scholar(client: APIClient) -> None:
-    results = [finish_perfect_lesson(client, index) for index in range(1, 6)]
+    results = [finish_perfect_lesson(client, index) for index in range(1, 12)]
     assert any(item["title"] == "Scholar" for result in results for item in result["new_achievements"])
     skills = all_skills(client)
-    assert [skill["status"] for skill in skills] == ["completed"] * 6
+    assert [skill["status"] for skill in skills] == ["completed"] * 12
     payload = client.get("/api/v1/bootstrap").json()
     assert payload["practice_lesson_id"] == skills[-1]["lesson_id"]
-    assert client.get("/api/v1/me/profile").json()["completed_skills"] == 6
+    assert client.get("/api/v1/me/profile").json()["completed_skills"] == 12
 
 
 def test_replaying_a_finished_lesson_keeps_progress_and_adds_xp(client: APIClient) -> None:
@@ -149,7 +149,7 @@ def test_attempts_of_other_learners_are_invisible(client: APIClient) -> None:
 
 def test_legendary_doubles_xp_costs_no_hearts_and_marks_the_skill(client: APIClient) -> None:
     attempt = start(client, skill_index=0, mode="legendary")
-    answers = ANSWERS_BY_SKILL_INDEX[0]
+    answers = SET_A
     assert submit_answer(client, attempt, 0, "wrong").json()["hearts"] == 4
     for index in range(1, 5):
         submit_answer(client, attempt, index, answers[index])
@@ -381,9 +381,10 @@ def test_practice_and_legendary_also_retry_but_never_cost_hearts(client: APIClie
         attempt = start(client, skill_index=skill, mode=mode)
         first = submit_answer(client, attempt, 0, "wrong").json()
         assert first["hearts"] == hearts_before and first["queue"][-1] == attempt["exercises"][0]["id"]
+        answers = SET_A if skill == 0 else SET_B
         for index in range(1, 5):
-            submit_answer(client, attempt, index, ANSWERS_BY_SKILL_INDEX[skill][index])
-        assert submit_answer(client, attempt, 0, ANSWERS_BY_SKILL_INDEX[skill][0]).json()["ready_to_complete"] is True
+            submit_answer(client, attempt, index, answers[index])
+        assert submit_answer(client, attempt, 0, answers[0]).json()["ready_to_complete"] is True
         assert client.post(f"/api/v1/attempts/{attempt['attempt_id']}/complete").status_code == 200
 
 
@@ -407,13 +408,16 @@ def unit_id(client: APIClient, unit_index: int = 0) -> int:
     return client.get("/api/v1/courses/1/path").json()["units"][unit_index]["id"]
 
 
-def test_chest_is_locked_until_every_skill_in_the_unit_is_complete(client: APIClient) -> None:
+def test_chest_unlocks_after_the_first_three_levels(client: APIClient) -> None:
     assert chest(client)["status"] == "locked"
+    assert client.post(f"/api/v1/lessons/{all_skills(client)[4]['lesson_id']}/attempts", json={"mode": "lesson"}).status_code == 403
     assert client.post(f"/api/v1/units/{unit_id(client)}/chest").status_code == 403
     finish_perfect_lesson(client, 1)
     assert chest(client)["status"] == "locked"  # one skill is still open
     finish_perfect_lesson(client, 2)
     assert chest(client) == {"status": "ready", "gems": 30}
+    assert [skill["status"] for skill in all_skills(client)[:6]] == ["completed"] * 3 + ["available"] + ["locked"] * 2
+    assert client.post(f"/api/v1/lessons/{all_skills(client)[4]['lesson_id']}/attempts", json={"mode": "lesson"}).status_code == 403
     assert chest(client, 1)["status"] == "locked"  # the next unit's chest is independent
 
 

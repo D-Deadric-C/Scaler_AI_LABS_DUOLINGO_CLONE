@@ -22,6 +22,7 @@ export function LearnDashboard() {
   const { data, error, reload } = useBootstrap();
   const toast = useToast();
   const [offscreen, setOffscreen] = useState(false);
+  const [openPathItem, setOpenPathItem] = useState<string | null>(null);
   const column = useRef<HTMLElement>(null);
   const current = data ? currentSkillId(data.units) : null;
 
@@ -49,22 +50,23 @@ export function LearnDashboard() {
   return (
     <div className="pt-layout">
       <section className="pt-path-column" ref={column}>
-        {data.units.map((unit, index) => {
-          const unlocked = unit.skills.some((skill) => skill.status !== "locked");
-          return (
-            <div key={unit.id}>
-              {index > 0 ? (
-                <section className={`pt-next-section ${unlocked ? "unlocked" : ""}`}>
-                  <span>{unlocked ? "UNLOCKED" : "UP NEXT"}</span>
-                  <h2>{unlocked ? null : <Image src="/learn-assets/lock.svg" width={14} height={18} alt="" aria-hidden />} Section {unit.position}</h2>
-                  <p>{unit.objective}</p>
-                  <button type="button" onClick={() => toast.show(unlocked ? "You're already here" : "Finish the sections before it to unlock this one")}>JUMP HERE?</button>
-                </section>
-              ) : null}
-              <UnitSection unit={unit} first={index === 0} currentSkillId={current} onOpenChest={openChest} />
-            </div>
-          );
-        })}
+        {data.units.map((unit, index) => (
+          <UnitSection
+            key={unit.id}
+            unit={unit}
+            first={index === 0}
+            currentSkillId={current}
+            openPathItem={openPathItem}
+            onTogglePathItem={(key) => setOpenPathItem((open) => open === key ? null : key)}
+            onOpenChest={openChest}
+          />
+        ))}
+        <section className="pt-next-section" id="section-2">
+          <span>UP NEXT</span>
+          <h2><Image src="/learn-assets/lock.svg" width={14} height={18} alt="" aria-hidden /> Section 2</h2>
+          <p>Build longer conversations and talk about everyday life.</p>
+          <button type="button" onClick={() => toast.show("Complete Section 1 to unlock Section 2")}>JUMP HERE?</button>
+        </section>
         {offscreen ? (
           <button type="button" className="pt-jump" aria-label="Jump to your current lesson" onClick={() => column.current?.querySelector("[data-current]")?.scrollIntoView({ behavior: "smooth", block: "center" })}>↓</button>
         ) : null}

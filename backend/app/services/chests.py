@@ -1,4 +1,4 @@
-"""Unit reward chests: locked until every skill of the unit is complete, then claimable once."""
+"""Unit reward chests: claimable after the first three skills of a unit."""
 from typing import Any
 
 from fastapi import HTTPException
@@ -16,7 +16,8 @@ CHEST_GEMS = 30
 def chest_status(skill_statuses: list[str], claimed: bool) -> str:
     if claimed:
         return "opened"
-    complete = bool(skill_statuses) and all(status == SkillStatus.COMPLETED for status in skill_statuses)
+    first_three = skill_statuses[:3]
+    complete = bool(first_three) and all(status == SkillStatus.COMPLETED for status in first_three)
     return "ready" if complete else "locked"
 
 
@@ -31,7 +32,7 @@ def claim_chest(db: Session, user_id: int, unit_id: int) -> dict[str, Any]:
     user = get_user(db, user_id, clock.current_time())
     states = [state for state in skill_states(db, user.id, unit.course_id) if state["skill"].unit_id == unit.id]
     if chest_status([state["status"] for state in states], unit.id in claimed_unit_ids(db, user.id)) != "ready":
-        raise HTTPException(403, "Complete every skill in this unit to open its chest")
+        raise HTTPException(403, "Complete the first three levels in this unit to open its chest")
     db.add(UnitChestClaim(user_id=user.id, unit_id=unit.id, gems=CHEST_GEMS, claimed_at=clock.current_time()))
     user.gems += CHEST_GEMS
     db.commit()

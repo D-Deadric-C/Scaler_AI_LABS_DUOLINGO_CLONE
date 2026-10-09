@@ -209,7 +209,7 @@ a { color: inherit; text-decoration: none; }
 .reference-unit-rewind > img:first-child { display: block; width: 78px; height: auto; }
 .reference-unit-rewind h2 { margin: 15px 0; font-size: 23px; }
 .reference-unit-rewind p { width: 190px; margin: 0; font-size: 17px; line-height: 1.45; }
-.reference-unit-rewind a { position: absolute; z-index: 2; left: 24px; bottom: 26px; min-height: 40px; padding: 0 16px; border-radius: 12px; background: #f7f7f7; box-shadow: 0 4px #bfc6d5; color: #374bfb; display: grid; place-items: center; font-size: 13px; font-weight: 900; }
+.reference-unit-rewind a, .reference-unit-rewind button { position: absolute; z-index: 2; left: 24px; bottom: 26px; min-height: 40px; padding: 0 16px; border-radius: 12px; background: #f7f7f7; box-shadow: 0 4px #bfc6d5; color: #374bfb; display: grid; place-items: center; font-size: 13px; font-weight: 900; }
 .reference-rewind-art { position: absolute; right: -15px; bottom: -13px; transform: rotate(-12deg); }
 .reference-practice-section-title { margin: 35px 0 20px; }
 .reference-practice-tile { position: relative; min-height: 119px; margin-bottom: 16px; padding: 17px 16px; border: 2px solid #37464f; border-radius: 16px; box-shadow: 0 3px #273740; color: #e8f0f3; display: block; overflow: hidden; }
@@ -345,6 +345,7 @@ a { color: inherit; text-decoration: none; }
 .reference-profile-icon img { width: 22px; height: 22px; filter: grayscale(1) brightness(.65); }
 .reference-chess-card { margin-top: 15px; min-height: 195px; padding: 22px 14px 17px; border: 2px solid var(--reference-border); border-radius: 13px; display: grid; place-items: center; align-content: center; gap: 9px; text-align: center; }
 .chess-pieces { color: #aab7bc; font-size: 33px; line-height: 1; letter-spacing: -8px; margin-right: 8px; }
+.chess-illustration { display: block; width: 58px; height: 48px; object-fit: contain; }
 .reference-chess-card strong { font-size: 17px; }
 .reference-chess-card p { margin: 0; color: #d6e0e5; font-family: Arial, sans-serif; font-size: 14px; }
 .reference-chess-card a { margin-top: 7px; color: var(--reference-blue); font-size: 12px; font-weight: 900; letter-spacing: .7px; }
@@ -479,3 +480,7 @@ a { color: inherit; text-decoration: none; }
 .demo-tools small { color: #a7b7be; }
 .demo-tools button { justify-self: start; margin-top: 6px; height: 40px; padding: 0 20px; border: 2px solid #36444d; border-radius: 12px; background: transparent; color: #47b8ee; font: inherit; font-weight: 800; letter-spacing: .6px; cursor: pointer; }
 .demo-tools button.danger { color: #f45a5a; }
+
+/* practice tiles and the rewind CTA are buttons for the "coming soon" entries: keep the link look */
+button.reference-practice-tile { width: 100%; background: transparent; }
+.reference-unit-rewind button { border: 0; font-family: inherit; cursor: pointer; }

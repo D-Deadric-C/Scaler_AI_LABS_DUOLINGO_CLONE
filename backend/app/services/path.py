@@ -48,7 +48,7 @@ def skill_states(db: Session, user_id: int, course_id: int) -> list[dict[str, An
         complete = bool(lessons) and done >= len(lessons)
         status = SkillStatus.COMPLETED if complete else SkillStatus.AVAILABLE if previous_complete and lessons else SkillStatus.LOCKED
         states.append({"skill": skill, "lessons": lessons, "completed_lessons": done, "crowns": row.crowns if row else 0, "status": status})
-        previous_complete = complete
+        previous_complete = previous_complete and complete
     return states
 
 

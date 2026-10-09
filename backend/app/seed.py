@@ -54,6 +54,81 @@ EXERCISE_SETS = [
 ]
 
 
+# Three additional lessons per unit complete the six-node path. Positions 1–3
+# above are kept intact so existing learner progress remains attached to them.
+EXTRA_SKILLS = {
+    1: [
+        (4, "At the market", "Buy food and ask for what you need", "basket", [
+            ("multiple_choice", "What does ‘manzana’ mean?", {"options": ["apple", "bread", "milk", "rice"]}, {"value": "apple"}, "‘Manzana’ means ‘apple’."),
+            ("word_bank", "Translate: I want an apple", {"tokens": ["Quiero", "una", "manzana", "agua"], "translation": "I want an apple"}, {"tokens": ["Quiero", "una", "manzana"]}, "Quiero una manzana means ‘I want an apple’."),
+            ("match_pairs", "Match the market words", {"pairs": [["manzana", "apple"], ["pan", "bread"], ["leche", "milk"]]}, {"pairs": [["manzana", "apple"], ["pan", "bread"], ["leche", "milk"]]}, "You know these market words."),
+            ("fill_blank", "Complete the sentence", {"sentence": "Quiero ___ manzana", "options": ["una", "un", "el"]}, {"value": "una"}, "Use ‘una’ with ‘manzana’."),
+            ("type_answer", "Type in Spanish: bread", {"placeholder": "Type in Spanish"}, {"accepted": ["pan"]}, "‘Bread’ is ‘pan’."),
+        ]),
+        (5, "Ask about food", "Order from a menu and ask for the bill", "menu", [
+            ("multiple_choice", "What does ‘¿Cuánto cuesta?’ mean?", {"options": ["How much does it cost?", "Where is it?", "What time is it?", "Do you like it?"]}, {"value": "How much does it cost?"}, "‘¿Cuánto cuesta?’ asks for the price."),
+            ("word_bank", "Translate: The menu, please", {"tokens": ["El", "menú", "por", "favor", "agua"], "translation": "The menu, please"}, {"tokens": ["El", "menú", "por", "favor"]}, "El menú, por favor means ‘The menu, please’."),
+            ("match_pairs", "Match the food words", {"pairs": [["agua", "water"], ["comida", "food"], ["menú", "menu"]]}, {"pairs": [["agua", "water"], ["comida", "food"], ["menú", "menu"]]}, "You matched all the food words."),
+            ("fill_blank", "Complete the sentence", {"sentence": "La cuenta, ___ favor", "options": ["por", "con", "sin"]}, {"value": "por"}, "‘Por favor’ means ‘please’."),
+            ("type_answer", "Type in Spanish: the bill", {"placeholder": "Type in Spanish"}, {"accepted": ["la cuenta"]}, "‘The bill’ is ‘la cuenta’."),
+        ]),
+        (6, "Describe a meal", "Say what you like to eat", "food", [
+            ("multiple_choice", "What does ‘Está delicioso’ mean?", {"options": ["It is delicious", "It is cold", "I am hungry", "It is late"]}, {"value": "It is delicious"}, "‘Está delicioso’ means ‘It is delicious’."),
+            ("word_bank", "Translate: I like the soup", {"tokens": ["Me", "gusta", "la", "sopa", "arroz"], "translation": "I like the soup"}, {"tokens": ["Me", "gusta", "la", "sopa"]}, "Me gusta la sopa means ‘I like the soup’."),
+            ("match_pairs", "Match the meal words", {"pairs": [["sopa", "soup"], ["arroz", "rice"], ["queso", "cheese"]]}, {"pairs": [["sopa", "soup"], ["arroz", "rice"], ["queso", "cheese"]]}, "You matched all the meal words."),
+            ("fill_blank", "Complete the sentence", {"sentence": "Me gusta ___ arroz", "options": ["el", "la", "un"]}, {"value": "el"}, "Use ‘el’ with ‘arroz’."),
+            ("type_answer", "Type in Spanish: It is delicious", {"placeholder": "Type in Spanish"}, {"accepted": ["Está delicioso", "Es delicioso"]}, "‘It is delicious’ is ‘Está delicioso’."),
+        ]),
+    ],
+    2: [
+        (4, "Book a ticket", "Get a ticket for your journey", "ticket", [
+            ("multiple_choice", "What does ‘un boleto’ mean?", {"options": ["a ticket", "a hotel", "a bag", "a train"]}, {"value": "a ticket"}, "‘Un boleto’ means ‘a ticket’."),
+            ("word_bank", "Translate: I need a ticket", {"tokens": ["Necesito", "un", "boleto", "tren"], "translation": "I need a ticket"}, {"tokens": ["Necesito", "un", "boleto"]}, "Necesito un boleto means ‘I need a ticket’."),
+            ("match_pairs", "Match the travel words", {"pairs": [["boleto", "ticket"], ["tren", "train"], ["estación", "station"]]}, {"pairs": [["boleto", "ticket"], ["tren", "train"], ["estación", "station"]]}, "You matched all the travel words."),
+            ("fill_blank", "Complete the sentence", {"sentence": "Necesito un ___", "options": ["boleto", "leche", "familia"]}, {"value": "boleto"}, "Necesito un boleto means ‘I need a ticket’."),
+            ("type_answer", "Type in Spanish: train", {"placeholder": "Type in Spanish"}, {"accepted": ["tren"]}, "‘Train’ is ‘tren’."),
+        ]),
+        (5, "Talk about plans", "Describe what you will do next", "clock", [
+            ("multiple_choice", "What does ‘mañana’ mean?", {"options": ["tomorrow", "yesterday", "tonight", "now"]}, {"value": "tomorrow"}, "‘Mañana’ means ‘tomorrow’."),
+            ("word_bank", "Translate: I am going to the park", {"tokens": ["Voy", "al", "parque", "museo"], "translation": "I am going to the park"}, {"tokens": ["Voy", "al", "parque"]}, "Voy al parque means ‘I am going to the park’."),
+            ("match_pairs", "Match the time words", {"pairs": [["mañana", "tomorrow"], ["hoy", "today"], ["tarde", "afternoon"]]}, {"pairs": [["mañana", "tomorrow"], ["hoy", "today"], ["tarde", "afternoon"]]}, "You matched all the time words."),
+            ("fill_blank", "Complete the sentence", {"sentence": "Voy ___ parque", "options": ["al", "de", "por"]}, {"value": "al"}, "‘Al’ means ‘to the’ here."),
+            ("type_answer", "Type in Spanish: tomorrow", {"placeholder": "Type in Spanish"}, {"accepted": ["mañana"]}, "‘Tomorrow’ is ‘mañana’."),
+        ]),
+        (6, "Share a trip", "Tell someone about a journey", "plane", [
+            ("multiple_choice", "What does ‘el viaje’ mean?", {"options": ["the trip", "the ticket", "the hotel", "the city"]}, {"value": "the trip"}, "‘El viaje’ means ‘the trip’."),
+            ("word_bank", "Translate: We visit the city", {"tokens": ["Visitamos", "la", "ciudad", "foto"], "translation": "We visit the city"}, {"tokens": ["Visitamos", "la", "ciudad"]}, "Visitamos la ciudad means ‘We visit the city’."),
+            ("match_pairs", "Match the trip words", {"pairs": [["viaje", "trip"], ["ciudad", "city"], ["foto", "photo"]]}, {"pairs": [["viaje", "trip"], ["ciudad", "city"], ["foto", "photo"]]}, "You matched all the trip words."),
+            ("fill_blank", "Complete the sentence", {"sentence": "La ciudad es ___", "options": ["bonita", "mañana", "boleto"]}, {"value": "bonita"}, "La ciudad es bonita means ‘The city is beautiful’."),
+            ("type_answer", "Type in Spanish: the city", {"placeholder": "Type in Spanish"}, {"accepted": ["la ciudad"]}, "‘The city’ is ‘la ciudad’."),
+        ]),
+    ],
+}
+
+
+def ensure_extra_skills(db: Session, course: Course | None) -> None:
+    """Extend older Spanish databases without changing existing skills or progress."""
+    if course is None or course.slug != "spanish-for-english":
+        return
+    units = {unit.position: unit for unit in db.scalars(select(Unit).where(Unit.course_id == course.id)).all()}
+    for unit_position, additions in EXTRA_SKILLS.items():
+        unit = units.get(unit_position)
+        if unit is None:
+            continue
+        existing = set(db.scalars(select(Skill.position).where(Skill.unit_id == unit.id)).all())
+        for position, title, description, icon, exercises in additions:
+            if position in existing:
+                continue
+            skill = Skill(unit_id=unit.id, position=position, title=title, description=description, icon=icon)
+            db.add(skill)
+            db.flush()
+            lesson = Lesson(skill_id=skill.id, position=1, title=f"{title} · Lesson 1", xp_reward=10)
+            db.add(lesson)
+            db.flush()
+            for exercise_position, (kind, prompt, payload, answer, explanation) in enumerate(exercises, start=1):
+                db.add(Exercise(lesson_id=lesson.id, position=exercise_position, type=kind, prompt=prompt, payload=payload, answer=answer, explanation=explanation))
+
+
 LEARNER_USERNAME = "learner"
 LEARNER_WEEKLY_SEED_XP = 95
 LEARNER_BASELINE = {
@@ -119,6 +194,7 @@ def seed_sample_completion(db: Session, user: User, lesson: Lesson) -> None:
 
 def seed_database(db: Session) -> None:
     if db.scalar(select(Course.id).limit(1)) is not None:
+        ensure_extra_skills(db, db.scalar(select(Course).where(Course.slug == "spanish-for-english")))
         ensure_achievements(db)
         user = db.scalar(select(User).where(User.username == "learner"))
         first_skill = db.scalar(select(Skill).join(Unit).order_by(Unit.position, Skill.position).limit(1))
@@ -165,6 +241,8 @@ def seed_database(db: Session) -> None:
         for position, (kind, prompt, payload, answer, explanation) in enumerate(source, start=1):
             exercise = Exercise(lesson_id=lesson.id, position=position, type=kind, prompt=prompt, payload=payload, answer=answer, explanation=explanation)
             db.add(exercise)
+
+    ensure_extra_skills(db, course)
 
     users = [
         User(username="learner", display_name="Alex", avatar_color="#1cb0f6", total_xp=185, gems=480, hearts=4, current_streak=7, longest_streak=12, last_active_date=clock.current_time().date() - timedelta(days=1), daily_goal=20),
