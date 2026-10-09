@@ -20,7 +20,8 @@ from .models import (
     XPEvent,
     utc_now,
 )
-from .service import current_time, evaluate_achievements, week_start
+from .services import clock
+from .services.achievements import evaluate_achievements
 
 
 SKILLS = [
@@ -77,8 +78,8 @@ def ensure_achievements(db: Session) -> None:
 
 def ensure_weekly_seed_events(db: Session) -> None:
     """Seed this week's league XP as ledger events so the board resets with the calendar week."""
-    now = current_time()
-    monday = week_start(now)
+    now = clock.current_time()
+    monday = clock.week_start(now)
     for user in db.scalars(select(User)).all():
         amount = WEEKLY_SEED_XP.get(user.username)
         key = f"seed:weekly:{user.id}:{monday:%Y%m%d}"
@@ -98,7 +99,7 @@ def reset_learner(db: Session) -> None:
     db.execute(delete(ExerciseAttempt).where(ExerciseAttempt.attempt_id.in_(attempt_ids)))
     for model in (LessonAttempt, XPEvent, SkillProgress, DailyActivity, UserAchievement):
         db.execute(delete(model).where(model.user_id == user.id))
-    now = current_time()
+    now = clock.current_time()
     for field, value in LEARNER_BASELINE.items():
         setattr(user, field, value)
     user.hearts_updated_at = now
@@ -211,7 +212,7 @@ def seed_database(db: Session) -> None:
             db.add(exercise)
 
     users = [
-        User(username="learner", display_name="Alex", avatar_color="#1cb0f6", total_xp=185, gems=480, hearts=4, current_streak=7, longest_streak=12, last_active_date=current_time().date() - timedelta(days=1), daily_goal=20),
+        User(username="learner", display_name="Alex", avatar_color="#1cb0f6", total_xp=185, gems=480, hearts=4, current_streak=7, longest_streak=12, last_active_date=clock.current_time().date() - timedelta(days=1), daily_goal=20),
         User(username="maya", display_name="Maya", avatar_color="#ce82ff", total_xp=940, current_streak=18),
         User(username="leo", display_name="Leo", avatar_color="#ff9600", total_xp=810, current_streak=11),
         User(username="sam", display_name="Sam", avatar_color="#ff4b4b", total_xp=720, current_streak=9),
@@ -223,7 +224,7 @@ def seed_database(db: Session) -> None:
 
     db.add(SkillProgress(user_id=users[0].id, skill_id=all_skills[0].id, completed_lessons=1, crowns=1))
     seed_sample_completion(db, users[0], first_lesson)
-    db.add(DailyActivity(user_id=users[0].id, activity_date=current_time().date(), xp_earned=15, lessons_completed=0))
+    db.add(DailyActivity(user_id=users[0].id, activity_date=clock.current_time().date(), xp_earned=15, lessons_completed=0))
     ensure_achievements(db)
     ensure_weekly_seed_events(db)
     db.flush()

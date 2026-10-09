@@ -1,13 +1,11 @@
 from collections.abc import Iterator
-import os
-from pathlib import Path
 
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
+from .core.config import database_url
 
-DEFAULT_DATABASE_PATH = Path(__file__).resolve().parent.parent / "duolingo.db"
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DATABASE_PATH}")
+
 
 
 class Base(DeclarativeBase):
@@ -15,7 +13,7 @@ class Base(DeclarativeBase):
 
 
 engine = create_engine(
-    DATABASE_URL,
+    database_url(),
     connect_args={"check_same_thread": False, "timeout": 15},
 )
 

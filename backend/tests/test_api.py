@@ -10,7 +10,8 @@ from app.database import Base, get_db
 from app.main import app
 from app.models import ExerciseAttempt, LessonAttempt, User, UserAchievement
 from app.seed import seed_database
-from app.service import effective_streak, regenerate_hearts, update_streak
+from app.services.hearts import regenerate_hearts
+from app.services.streaks import effective_streak, update_streak
 
 
 class APIClient:
@@ -315,19 +316,16 @@ class Clock:
 
 @pytest.fixture()
 def clock(monkeypatch) -> Clock:
-    import app.seed as seed_module
-    import app.service as service_module
-
+    import app.services.clock as clock_module
     from app.models import utc_now
 
     fake = Clock(utc_now())
-    monkeypatch.setattr(service_module, "current_time", fake)
-    monkeypatch.setattr(seed_module, "current_time", fake)
+    monkeypatch.setattr(clock_module, "current_time", fake)
     return fake
 
 
 def test_second_mistake_does_not_restart_the_heart_timer() -> None:
-    from app.service import lose_heart
+    from app.services.hearts import lose_heart
 
     now = datetime(2026, 10, 9, 12, 0)
     user = User(username="t", display_name="T", hearts=5, max_hearts=5, hearts_updated_at=now - timedelta(days=3))
@@ -339,7 +337,7 @@ def test_second_mistake_does_not_restart_the_heart_timer() -> None:
 
 
 def test_lose_heart_never_goes_below_zero() -> None:
-    from app.service import lose_heart
+    from app.services.hearts import lose_heart
 
     now = datetime(2026, 10, 9, 12, 0)
     user = User(username="t", display_name="T", hearts=0, max_hearts=5, hearts_updated_at=now)
@@ -464,7 +462,7 @@ def test_league_is_weekly_and_resets_with_the_calendar(client: APIClient, clock:
 
 
 def test_week_start_is_monday_midnight() -> None:
-    from app.service import week_start
+    from app.services.clock import week_start
 
     assert week_start(datetime(2026, 10, 9, 15, 30)) == datetime(2026, 10, 5)
     assert week_start(datetime(2026, 10, 5, 0, 0)) == datetime(2026, 10, 5)
